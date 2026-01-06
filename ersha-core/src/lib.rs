@@ -16,6 +16,9 @@ pub struct StatusId(pub Ulid);
 pub struct DispatcherId(pub Ulid);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct BatchId(pub Ulid);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct H3Cell(pub u64);
 
 pub struct Device {
@@ -98,4 +101,28 @@ pub enum DeviceErrorCode {
     SensorFault,
     RadioFault,
     Unknown,
+}
+
+pub struct Dispatcher {
+    pub id: DispatcherId,
+    pub location: H3Cell,
+    pub state: DispatcherState,
+    pub provisioned_at: jiff::Timestamp,
+}
+
+pub enum DispatcherState {
+    Active,
+    Suspended,
+}
+
+pub struct BatchUploadRequest {
+    pub id: BatchId,
+    pub dispatcher_id: DispatcherId,
+    pub readings: BoxList<SensorReading>,
+    pub statuses: BoxList<DeviceStatus>,
+    pub timestamp: jiff::Timestamp,
+}
+
+pub struct BatchUploadResponse {
+    pub id: BatchId,
 }
