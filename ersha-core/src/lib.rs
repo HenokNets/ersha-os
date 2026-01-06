@@ -68,10 +68,17 @@ pub enum QualityStatus {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SensorMetric {
-    pub kind: SensorMetricKind,
-    pub value: f64,
-    pub unit: MetricUnit,
+pub enum SensorMetric {
+    /// Soil moisture as a percentage.
+    SoilMoisture { value: f64 },
+    /// Soil temperature in degrees Celsius.
+    SoilTemp { value: f64 },
+    /// Air temperature in degrees Celsius.
+    AirTemp { value: f64 },
+    /// Relative humidity as a percentage.
+    Humidity { value: f64 },
+    /// Rainfall in millimeters.
+    Rainfall { value: f64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
