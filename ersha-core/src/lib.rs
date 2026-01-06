@@ -62,6 +62,7 @@ pub struct Device {
 pub struct Sensor {
     pub id: SensorId,
     pub metric: SensorMetric,
+    pub kind: SensorKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -76,6 +77,15 @@ pub enum SensorState {
     Active,
     Faulty,
     Inactive,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SensorKind {
+    SoilMoisture,
+    SoilTemp,
+    AirTemp,
+    Humidity,
+    Rainfall,
 }
 
 /// Device classification.
