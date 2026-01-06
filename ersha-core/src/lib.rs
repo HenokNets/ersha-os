@@ -105,7 +105,7 @@ pub struct DeviceStatus {
     /// Battery charge level expressed as a percentage in the range 0–100 (inclusive).
     pub battery_percent: u8,
     pub uptime_seconds: u64,
-    pub signal_rssi: i64,
+    pub signal_rssi: i16,
     pub errors: BoxList<DeviceError>,
     pub timestamp: jiff::Timestamp,
 }
