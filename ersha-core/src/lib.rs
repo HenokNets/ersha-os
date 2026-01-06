@@ -102,6 +102,7 @@ pub struct DeviceStatus {
     pub id: StatusId,
     pub device_id: DeviceId,
     pub dispatcher_id: DispatcherId,
+    /// Battery charge level expressed as a percentage in the range 0–100 (inclusive).
     pub battery_percent: u8,
     pub uptime_seconds: u64,
     pub signal_rssi: i64,
