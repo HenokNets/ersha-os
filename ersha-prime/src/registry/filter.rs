@@ -17,9 +17,15 @@ pub enum SortOrder {
     Desc,
 }
 
-pub struct Pagination {
-    pub offset: usize,
-    pub limit: Option<usize>,
+pub enum Pagination {
+    Offset {
+        offset: usize,
+        limit: usize,
+    },
+    Cursor {
+        after: Option<DeviceId>,
+        limit: usize,
+    },
 }
 
 pub struct QueryOptions<F> {
