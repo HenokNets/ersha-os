@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+ersha-core = { path = "../ersha-core" } 
+ulid = "1.1"
+async-trait = "0.1"
+jiff = "0.2.18"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] } 
+
