@@ -2,22 +2,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use ersha_core::{
-    SensorReading,
-    DeviceStatus,
-    ReadingId,
-    StatusId,
-};
+use ersha_core::{DeviceStatus, ReadingId, SensorReading, StatusId};
 
-use crate::storage::{
-    Storage,
-    StorageError,
-};
-use crate::storage::models::{
-    StoredSensorReading,
-    StoredDeviceStatus,
-    StorageState,
-};
+use crate::storage::models::{StorageState, StoredDeviceStatus, StoredSensorReading};
+use crate::storage::{Storage, StorageError};
 
 /// In memory storage implementation.
 /// This is primarily intended for testing and as a reference
@@ -30,10 +18,7 @@ pub struct MemoryStorage {
 
 #[async_trait]
 impl Storage for MemoryStorage {
-    async fn store_sensor_reading(
-        &self,
-        reading: SensorReading,
-    ) -> Result<(), StorageError> {
+    async fn store_sensor_reading(&self, reading: SensorReading) -> Result<(), StorageError> {
         let mut map = self
             .sensor_readings
             .lock()
@@ -53,10 +38,7 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    async fn store_device_status(
-        &self,
-        status: DeviceStatus,
-    ) -> Result<(), StorageError> {
+    async fn store_device_status(&self, status: DeviceStatus) -> Result<(), StorageError> {
         let mut map = self
             .device_statuses
             .lock()
@@ -76,9 +58,7 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    async fn fetch_pending_sensor_readings(
-        &self,
-    ) -> Result<Vec<SensorReading>, StorageError> {
+    async fn fetch_pending_sensor_readings(&self) -> Result<Vec<SensorReading>, StorageError> {
         let map = self
             .sensor_readings
             .lock()
@@ -91,9 +71,7 @@ impl Storage for MemoryStorage {
             .collect())
     }
 
-    async fn fetch_pending_device_statuses(
-        &self,
-    ) -> Result<Vec<DeviceStatus>, StorageError> {
+    async fn fetch_pending_device_statuses(&self) -> Result<Vec<DeviceStatus>, StorageError> {
         let map = self
             .device_statuses
             .lock()
@@ -106,10 +84,7 @@ impl Storage for MemoryStorage {
             .collect())
     }
 
-    async fn mark_sensor_readings_uploaded(
-        &self,
-        ids: &[ReadingId],
-    ) -> Result<(), StorageError> {
+    async fn mark_sensor_readings_uploaded(&self, ids: &[ReadingId]) -> Result<(), StorageError> {
         let mut map = self
             .sensor_readings
             .lock()
@@ -124,10 +99,7 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 
-    async fn mark_device_statuses_uploaded(
-        &self,
-        ids: &[StatusId],
-    ) -> Result<(), StorageError> {
+    async fn mark_device_statuses_uploaded(&self, ids: &[StatusId]) -> Result<(), StorageError> {
         let mut map = self
             .device_statuses
             .lock()
@@ -142,4 +114,3 @@ impl Storage for MemoryStorage {
         Ok(())
     }
 }
-

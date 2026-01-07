@@ -1,6 +1,6 @@
-use ersha_dispatch::storage::memory::MemoryStorage;
-use ersha_dispatch::storage::Storage;
 use ersha_core::*;
+use ersha_dispatch::storage::Storage;
+use ersha_dispatch::storage::memory::MemoryStorage;
 use ulid::Ulid;
 
 fn dummy_reading() -> SensorReading {
@@ -38,4 +38,3 @@ async fn sensor_reading_lifecycle() {
     let pending = storage.fetch_pending_sensor_readings().await.unwrap();
     assert_eq!(pending.len(), 0);
 }
-

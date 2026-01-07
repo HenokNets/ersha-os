@@ -1,9 +1,4 @@
-use ersha_core::{
-    SensorReading,
-    DeviceStatus,
-    ReadingId,
-    StatusId,
-};
+use ersha_core::{DeviceStatus, ReadingId, SensorReading, StatusId};
 
 /// upload state of a stored event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,4 +22,3 @@ pub struct StoredDeviceStatus {
     pub status: DeviceStatus,
     pub state: StorageState,
 }
-
