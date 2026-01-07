@@ -1,3 +1,4 @@
+pub mod models;
 use async_trait::async_trait;
 use ersha_core::{
     SensorReading,
