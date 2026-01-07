@@ -20,7 +20,7 @@ fn dummy_reading() -> SensorReading {
 
 #[tokio::test]
 async fn sensor_reading_lifecycle() {
-    let storage = MemoryStorage::default();
+    let storage: MemoryStorage = MemoryStorage::default();
 
     let reading = dummy_reading();
     let reading_id = reading.id;
