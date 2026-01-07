@@ -2,7 +2,7 @@
 use ersha_core::{DeviceId, DeviceKind, DeviceState, DispatcherState, H3Cell};
 
 use jiff;
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::RangeInclusive};
 
 pub enum SortBy {
     Id,
@@ -37,11 +37,11 @@ pub struct DeviceFilter {
     pub locations: Option<HashSet<H3Cell>>,
     pub provisioned_after: Option<jiff::Timestamp>,
     pub provisioned_before: Option<jiff::Timestamp>,
-    pub min_sensor_count: Option<usize>,
-    pub max_sensor_count: Option<usize>,
+    pub sensor_count: Option<RangeInclusive<usize>>,
     pub manufacturer_pattern: Option<String>,
 }
 
+#[derive(Default)]
 pub struct DispatcherFilter {
     pub states: Option<HashSet<DispatcherState>>,
     pub locations: Option<HashSet<H3Cell>>,
