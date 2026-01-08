@@ -2,8 +2,8 @@ use ersha_core::*;
 use ersha_dispatch::storage::Storage;
 use ersha_dispatch::storage::memory::MemoryStorage;
 use ersha_dispatch::storage::sqlite::SqliteStorage;
-use ulid::Ulid;
 use tempfile::NamedTempFile;
+use ulid::Ulid;
 
 fn dummy_reading() -> SensorReading {
     SensorReading {
@@ -99,7 +99,7 @@ async fn memory_mixed_events() {
 async fn sqlite_sensor_reading_lifecycle() {
     let temp_file = NamedTempFile::new().unwrap();
     let db_path = temp_file.path();
-    
+
     let storage = SqliteStorage::new(db_path).await.unwrap();
 
     let reading = dummy_reading();
@@ -123,7 +123,7 @@ async fn sqlite_sensor_reading_lifecycle() {
 async fn sqlite_device_status_lifecycle() {
     let temp_file = NamedTempFile::new().unwrap();
     let db_path = temp_file.path();
-    
+
     let storage = SqliteStorage::new(db_path).await.unwrap();
 
     let status = dummy_status();
@@ -147,7 +147,7 @@ async fn sqlite_device_status_lifecycle() {
 async fn sqlite_mixed_events() {
     let temp_file = NamedTempFile::new().unwrap();
     let db_path = temp_file.path();
-    
+
     let storage = SqliteStorage::new(db_path).await.unwrap();
 
     let reading = dummy_reading();
@@ -167,13 +167,13 @@ async fn sqlite_mixed_events() {
 async fn sqlite_persistence_across_instances() {
     let temp_file = NamedTempFile::new().unwrap();
     let db_path = temp_file.path();
-    
+
     {
         let storage = SqliteStorage::new(db_path).await.unwrap();
         let reading = dummy_reading();
         storage.store_sensor_reading(reading).await.unwrap();
     }
-    
+
     {
         let storage = SqliteStorage::new(db_path).await.unwrap();
         let pending = storage.fetch_pending_sensor_readings().await.unwrap();
@@ -185,14 +185,14 @@ async fn sqlite_persistence_across_instances() {
 async fn sqlite_batch_mark_uploaded() {
     let temp_file = NamedTempFile::new().unwrap();
     let db_path = temp_file.path();
-    
+
     let storage = SqliteStorage::new(db_path).await.unwrap();
 
     // Create multiple readings
     let reading1 = dummy_reading();
     let reading2 = dummy_reading();
     let reading3 = dummy_reading();
-    
+
     let id1 = reading1.id;
     let id2 = reading2.id;
     let id3 = reading3.id;
@@ -216,17 +216,11 @@ async fn sqlite_batch_mark_uploaded() {
 async fn sqlite_empty_ids_handling() {
     let temp_file = NamedTempFile::new().unwrap();
     let db_path = temp_file.path();
-    
+
     let storage = SqliteStorage::new(db_path).await.unwrap();
 
     // shouldnt panic with empty slices
-    storage
-        .mark_sensor_readings_uploaded(&[])
-        .await
-        .unwrap();
-    
-    storage
-        .mark_device_statuses_uploaded(&[])
-        .await
-        .unwrap();
+    storage.mark_sensor_readings_uploaded(&[]).await.unwrap();
+
+    storage.mark_device_statuses_uploaded(&[]).await.unwrap();
 }
