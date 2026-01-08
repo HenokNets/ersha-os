@@ -1,7 +1,9 @@
 use ersha_core::*;
 use ersha_dispatch::storage::Storage;
 use ersha_dispatch::storage::memory::MemoryStorage;
+use ersha_dispatch::storage::sqlite::SqliteStorage;
 use ulid::Ulid;
+use tempfile::NamedTempFile;
 
 fn dummy_reading() -> SensorReading {
     SensorReading {
@@ -18,8 +20,23 @@ fn dummy_reading() -> SensorReading {
     }
 }
 
+fn dummy_status() -> DeviceStatus {
+    DeviceStatus {
+        id: StatusId(Ulid::new()),
+        device_id: DeviceId(Ulid::new()),
+        dispatcher_id: DispatcherId(Ulid::new()),
+        battery_percent: Percentage(85),
+        uptime_seconds: 3600,
+        signal_rssi: -65,
+        errors: Box::new([]),
+        timestamp: jiff::Timestamp::now(),
+        sensor_statuses: Box::new([]),
+    }
+}
+
+// memory storage tests
 #[tokio::test]
-async fn sensor_reading_lifecycle() {
+async fn memory_sensor_reading_lifecycle() {
     let storage: MemoryStorage = MemoryStorage::default();
 
     let reading = dummy_reading();
@@ -37,4 +54,179 @@ async fn sensor_reading_lifecycle() {
 
     let pending = storage.fetch_pending_sensor_readings().await.unwrap();
     assert_eq!(pending.len(), 0);
+}
+
+#[tokio::test]
+async fn memory_device_status_lifecycle() {
+    let storage: MemoryStorage = MemoryStorage::default();
+
+    let status = dummy_status();
+    let status_id = status.id;
+
+    storage.store_device_status(status).await.unwrap();
+
+    let pending = storage.fetch_pending_device_statuses().await.unwrap();
+    assert_eq!(pending.len(), 1);
+
+    storage
+        .mark_device_statuses_uploaded(&[status_id])
+        .await
+        .unwrap();
+
+    let pending = storage.fetch_pending_device_statuses().await.unwrap();
+    assert_eq!(pending.len(), 0);
+}
+
+#[tokio::test]
+async fn memory_mixed_events() {
+    let storage: MemoryStorage = MemoryStorage::default();
+
+    let reading = dummy_reading();
+    let status = dummy_status();
+
+    storage.store_sensor_reading(reading).await.unwrap();
+    storage.store_device_status(status).await.unwrap();
+
+    let pending_readings = storage.fetch_pending_sensor_readings().await.unwrap();
+    let pending_statuses = storage.fetch_pending_device_statuses().await.unwrap();
+
+    assert_eq!(pending_readings.len(), 1);
+    assert_eq!(pending_statuses.len(), 1);
+}
+
+// SQLite storage tests
+#[tokio::test]
+async fn sqlite_sensor_reading_lifecycle() {
+    let temp_file = NamedTempFile::new().unwrap();
+    let db_path = temp_file.path();
+    
+    let storage = SqliteStorage::new(db_path).await.unwrap();
+
+    let reading = dummy_reading();
+    let reading_id = reading.id;
+
+    storage.store_sensor_reading(reading).await.unwrap();
+
+    let pending = storage.fetch_pending_sensor_readings().await.unwrap();
+    assert_eq!(pending.len(), 1);
+
+    storage
+        .mark_sensor_readings_uploaded(&[reading_id])
+        .await
+        .unwrap();
+
+    let pending = storage.fetch_pending_sensor_readings().await.unwrap();
+    assert_eq!(pending.len(), 0);
+}
+
+#[tokio::test]
+async fn sqlite_device_status_lifecycle() {
+    let temp_file = NamedTempFile::new().unwrap();
+    let db_path = temp_file.path();
+    
+    let storage = SqliteStorage::new(db_path).await.unwrap();
+
+    let status = dummy_status();
+    let status_id = status.id;
+
+    storage.store_device_status(status).await.unwrap();
+
+    let pending = storage.fetch_pending_device_statuses().await.unwrap();
+    assert_eq!(pending.len(), 1);
+
+    storage
+        .mark_device_statuses_uploaded(&[status_id])
+        .await
+        .unwrap();
+
+    let pending = storage.fetch_pending_device_statuses().await.unwrap();
+    assert_eq!(pending.len(), 0);
+}
+
+#[tokio::test]
+async fn sqlite_mixed_events() {
+    let temp_file = NamedTempFile::new().unwrap();
+    let db_path = temp_file.path();
+    
+    let storage = SqliteStorage::new(db_path).await.unwrap();
+
+    let reading = dummy_reading();
+    let status = dummy_status();
+
+    storage.store_sensor_reading(reading).await.unwrap();
+    storage.store_device_status(status).await.unwrap();
+
+    let pending_readings = storage.fetch_pending_sensor_readings().await.unwrap();
+    let pending_statuses = storage.fetch_pending_device_statuses().await.unwrap();
+
+    assert_eq!(pending_readings.len(), 1);
+    assert_eq!(pending_statuses.len(), 1);
+}
+
+#[tokio::test]
+async fn sqlite_persistence_across_instances() {
+    let temp_file = NamedTempFile::new().unwrap();
+    let db_path = temp_file.path();
+    
+    {
+        let storage = SqliteStorage::new(db_path).await.unwrap();
+        let reading = dummy_reading();
+        storage.store_sensor_reading(reading).await.unwrap();
+    }
+    
+    {
+        let storage = SqliteStorage::new(db_path).await.unwrap();
+        let pending = storage.fetch_pending_sensor_readings().await.unwrap();
+        assert_eq!(pending.len(), 1);
+    }
+}
+
+#[tokio::test]
+async fn sqlite_batch_mark_uploaded() {
+    let temp_file = NamedTempFile::new().unwrap();
+    let db_path = temp_file.path();
+    
+    let storage = SqliteStorage::new(db_path).await.unwrap();
+
+    // Create multiple readings
+    let reading1 = dummy_reading();
+    let reading2 = dummy_reading();
+    let reading3 = dummy_reading();
+    
+    let id1 = reading1.id;
+    let id2 = reading2.id;
+    let id3 = reading3.id;
+
+    storage.store_sensor_reading(reading1).await.unwrap();
+    storage.store_sensor_reading(reading2).await.unwrap();
+    storage.store_sensor_reading(reading3).await.unwrap();
+
+    // mark two as uploaded
+    storage
+        .mark_sensor_readings_uploaded(&[id1, id2])
+        .await
+        .unwrap();
+
+    let pending = storage.fetch_pending_sensor_readings().await.unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, id3);
+}
+
+#[tokio::test]
+async fn sqlite_empty_ids_handling() {
+    let temp_file = NamedTempFile::new().unwrap();
+    let db_path = temp_file.path();
+    
+    let storage = SqliteStorage::new(db_path).await.unwrap();
+
+    // shouldnt panic with empty slices
+    storage
+        .mark_sensor_readings_uploaded(&[])
+        .await
+        .unwrap();
+    
+    storage
+        .mark_device_statuses_uploaded(&[])
+        .await
+        .unwrap();
 }

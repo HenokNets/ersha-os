@@ -1,5 +1,6 @@
 pub mod memory;
 pub mod models;
+pub mod sqlite;
 use async_trait::async_trait;
 use ersha_core::{DeviceStatus, ReadingId, SensorReading, StatusId};
 
