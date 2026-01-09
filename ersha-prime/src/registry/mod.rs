@@ -3,7 +3,7 @@ pub mod filter;
 pub mod memory;
 
 use ersha_core::{Device, DeviceId, Dispatcher, DispatcherId};
-use filter::{DeviceFilter, DispatcherFilter, QueryOptions};
+use filter::{DeviceFilter, DeviceSortBy, DispatcherFilter, DispatcherSortBy, QueryOptions};
 
 trait DeviceRegistry {
     type Error;
@@ -15,7 +15,10 @@ trait DeviceRegistry {
 
     async fn batch_register(&mut self, devices: Vec<Device>) -> Result<(), Self::Error>;
     async fn count(&self, filter: Option<DeviceFilter>) -> Result<usize, Self::Error>;
-    async fn list(&self, options: QueryOptions<DeviceFilter>) -> Result<Vec<Device>, Self::Error>;
+    async fn list(
+        &self,
+        options: QueryOptions<DeviceFilter, DeviceSortBy>,
+    ) -> Result<Vec<Device>, Self::Error>;
 }
 
 trait DispatcherRegistry {
@@ -30,6 +33,6 @@ trait DispatcherRegistry {
     async fn count(&self, filter: Option<DispatcherFilter>) -> Result<usize, Self::Error>;
     async fn list(
         &self,
-        options: QueryOptions<DispatcherFilter>,
+        options: QueryOptions<DispatcherFilter, DispatcherSortBy>,
     ) -> Result<Vec<Dispatcher>, Self::Error>;
 }

@@ -3,12 +3,21 @@ use ersha_core::{DeviceId, DeviceKind, DeviceState, DispatcherState, H3Cell};
 use jiff;
 use std::ops::RangeInclusive;
 
-pub enum SortBy {
+pub enum DeviceSortBy {
     Id,
-    ProvisionAt,
+    Kind,
+    State,
     Location,
     Manufacturer,
+    ProvisionAt,
+    SensorCount,
+}
+
+pub enum DispatcherSortBy {
+    Id,
+    Location,
     State,
+    ProvisionAt,
 }
 
 pub enum SortOrder {
@@ -27,9 +36,9 @@ pub enum Pagination {
     },
 }
 
-pub struct QueryOptions<F> {
+pub struct QueryOptions<F, S> {
     pub filter: F,
-    pub sort_by: Option<SortBy>,
+    pub sort_by: S,
     pub sort_order: SortOrder,
     pub pagination: Pagination,
 }
