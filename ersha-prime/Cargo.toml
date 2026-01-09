@@ -7,3 +7,4 @@ repository = "https://github.com/ersha-os/ersha-os"
 [dependencies]
 ersha-core = { path = "../ersha-core" }
 jiff.workspace = true
+ulid.workspace = true
