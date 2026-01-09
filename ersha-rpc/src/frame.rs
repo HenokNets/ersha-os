@@ -33,7 +33,7 @@ where
     Ok(())
 }
 
-pub async fn read_frame<R, T>(r: &mut R) -> Result<Envelope, FrameError>
+pub async fn read_frame<R>(r: &mut R) -> Result<Envelope, FrameError>
 where
     R: AsyncReadExt + Unpin,
 {
