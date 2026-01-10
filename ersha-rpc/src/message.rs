@@ -2,8 +2,20 @@ use ersha_core::{BatchUploadRequest, BatchUploadResponse, HelloRequest, HelloRes
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct MessageId(pub Ulid);
+
+impl MessageId {
+    pub fn new() -> Self {
+        Self(Ulid::new())
+    }
+}
+
+impl Default for MessageId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Envelope {

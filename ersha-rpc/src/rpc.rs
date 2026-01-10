@@ -75,7 +75,7 @@ impl RpcTcp {
     }
 
     pub async fn send(&self, payload: WireMessage) -> Result<MessageId, RpcError> {
-        let msg_id = MessageId::default();
+        let msg_id = MessageId::new();
         let env = Envelope {
             msg_id,
             reply_to: None,
@@ -96,7 +96,7 @@ impl RpcTcp {
         payload: WireMessage,
         timeout: Duration,
     ) -> Result<Envelope, RpcError> {
-        let msg_id = MessageId::default();
+        let msg_id = MessageId::new();
         let (tx_wait, rx_wait) = oneshot::channel();
 
         self.pending.insert(msg_id, tx_wait);
@@ -127,7 +127,7 @@ impl RpcTcp {
         request_msg_id: MessageId,
         payload: WireMessage,
     ) -> Result<MessageId, RpcError> {
-        let msg_id = MessageId::default();
+        let msg_id = MessageId::new();
         let env = Envelope {
             msg_id,
             reply_to: Some(request_msg_id),
