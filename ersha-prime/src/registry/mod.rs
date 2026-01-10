@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 pub mod filter;
 pub mod memory;
+pub mod sqlite;
 
 use ersha_core::{Device, DeviceId, Dispatcher, DispatcherId};
 use filter::{DeviceFilter, DeviceSortBy, DispatcherFilter, DispatcherSortBy, QueryOptions};
