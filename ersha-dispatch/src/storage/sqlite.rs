@@ -7,17 +7,15 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 
+use crate::storage::migrations::Migrator;
 use crate::storage::{CleanupStats, Storage, StorageStats};
 use ersha_core::{DeviceStatus, ReadingId, SensorReading, StatusId};
 
-/// SQLite-backed storage implementation.
-/// Stores events as JSON blobs in two tables.
 #[derive(Clone)]
 pub struct SqliteStorage {
     conn: Arc<Mutex<Connection>>,
 }
 
-/// Error type for SqliteStorage
 #[derive(Debug)]
 pub enum SqliteStorageError {
     ConnectionFailed(String),
@@ -72,81 +70,72 @@ impl From<SerdeJsonError> for SqliteStorageError {
 }
 
 impl SqliteStorage {
-    /// Opens or creates a SQLite database at the given path.
+    /// Create new SQLite storage with automatic migrations
     pub async fn new<P: AsRef<Path>>(path: P) -> Result<Self, SqliteStorageError> {
         let conn = Connection::open(path).map_err(|e| {
             SqliteStorageError::ConnectionFailed(format!("Failed to open SQLite DB: {}", e))
         })?;
 
-        // Initialize database schema
-        Self::init_schema(&conn)?;
+        // Enable WAL for better concurrency
+        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+
+        // Run migrations first
+        Self::run_migrations(&conn)?;
+
+        // Ensure all indexes exist
+        Self::ensure_indexes(&conn)?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
         })
     }
 
-    fn init_schema(conn: &Connection) -> Result<(), SqliteStorageError> {
+    /// Run database migrations
+    fn run_migrations(conn: &Connection) -> Result<(), SqliteStorageError> {
+        Migrator::run_migrations(conn).map_err(|e| {
+            SqliteStorageError::SchemaCreationFailed(format!("Migration failed: {}", e))
+        })
+    }
+
+    /// Ensure all necessary indexes exist
+    fn ensure_indexes(conn: &Connection) -> Result<(), SqliteStorageError> {
         conn.execute_batch(
             r#"
-            CREATE TABLE IF NOT EXISTS sensor_readings (
-                id TEXT PRIMARY KEY,
-                reading_json TEXT NOT NULL,
-                state TEXT NOT NULL CHECK (state IN ('pending', 'uploaded')),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                uploaded_at TIMESTAMP
-            );
-            
-            CREATE TABLE IF NOT EXISTS device_statuses (
-                id TEXT PRIMARY KEY,
-                status_json TEXT NOT NULL,
-                state TEXT NOT NULL CHECK (state IN ('pending', 'uploaded')),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                uploaded_at TIMESTAMP
-            );
-            
-            CREATE INDEX IF NOT EXISTS idx_sensor_readings_state 
-            ON sensor_readings(state);
-            
-            CREATE INDEX IF NOT EXISTS idx_device_statuses_state 
-            ON device_statuses(state);
-            
-            CREATE INDEX IF NOT EXISTS idx_sensor_readings_uploaded_at 
-            ON sensor_readings(uploaded_at);
-            
-            CREATE INDEX IF NOT EXISTS idx_device_statuses_uploaded_at 
-            ON device_statuses(uploaded_at);
-            
-            CREATE INDEX IF NOT EXISTS idx_sensor_readings_created_at 
-            ON sensor_readings(created_at);
-            
-            CREATE INDEX IF NOT EXISTS idx_device_statuses_created_at 
-            ON device_statuses(created_at);
+            -- Ensure all indexes exist (idempotent)
+            CREATE INDEX IF NOT EXISTS idx_sensor_readings_state ON sensor_readings(state);
+            CREATE INDEX IF NOT EXISTS idx_device_statuses_state ON device_statuses(state);
+            CREATE INDEX IF NOT EXISTS idx_sensor_readings_uploaded_at ON sensor_readings(uploaded_at);
+            CREATE INDEX IF NOT EXISTS idx_device_statuses_uploaded_at ON device_statuses(uploaded_at);
+            CREATE INDEX IF NOT EXISTS idx_sensor_readings_created_at ON sensor_readings(created_at);
+            CREATE INDEX IF NOT EXISTS idx_device_statuses_created_at ON device_statuses(created_at);
             "#,
-        )
-        .map_err(|e| {
-            SqliteStorageError::SchemaCreationFailed(format!("Failed to create tables: {}", e))
-        })?;
-
+        )?;
         Ok(())
     }
 
-    /// Serialize SensorReading to JSON string
+    pub async fn get_version(&self) -> Result<i64, SqliteStorageError> {
+        let conn = self.conn.lock().await;
+        Migrator::get_version(&conn)
+            .map_err(|e| SqliteStorageError::QueryFailed(format!("Failed to get version: {}", e)))
+    }
+
+    pub async fn check_schema(&self) -> Result<bool, SqliteStorageError> {
+        let version = self.get_version().await?;
+        Ok(version >= 1) // version 1 is our current schema
+    }
+
     fn serialize_reading(reading: &SensorReading) -> Result<String, SerdeJsonError> {
         serde_json::to_string(reading)
     }
 
-    /// Deserialize JSON string to SensorReading
     fn deserialize_reading(json: &str) -> Result<SensorReading, SerdeJsonError> {
         serde_json::from_str(json)
     }
 
-    /// Serialize DeviceStatus to JSON string
     fn serialize_status(status: &DeviceStatus) -> Result<String, SerdeJsonError> {
         serde_json::to_string(status)
     }
 
-    /// Deserialize JSON string to DeviceStatus
     fn deserialize_status(json: &str) -> Result<DeviceStatus, SerdeJsonError> {
         serde_json::from_str(json)
     }
@@ -347,7 +336,6 @@ impl Storage for SqliteStorage {
     async fn get_stats(&self) -> Result<StorageStats, Self::Error> {
         let conn = self.conn.lock().await;
 
-        // Get sensor reading statistics - use COALESCE to handle NULL
         let sensor_stats = conn.query_row(
             "SELECT 
                 COUNT(*) as total,
@@ -363,7 +351,6 @@ impl Storage for SqliteStorage {
             },
         )?;
 
-        // Get device status statistics - use COALESCE to handle NULL
         let device_stats = conn.query_row(
             "SELECT 
                 COUNT(*) as total,
@@ -393,7 +380,6 @@ impl Storage for SqliteStorage {
         let conn = self.conn.lock().await;
 
         if older_than == Duration::ZERO {
-            // Special case: delete ALL uploaded records regardless of age
             let tx = conn.unchecked_transaction().map_err(|e| {
                 SqliteStorageError::TransactionFailed(format!("Transaction failed: {}", e))
             })?;
@@ -416,24 +402,18 @@ impl Storage for SqliteStorage {
             });
         }
 
-        // For non-zero duration, calculate cutoff time using uploaded_at
-        // SQLite's julianday returns fractional days since noon Nov 24, 4714 BC GMT
-        // Subtract older_than in days
         let cutoff_days = older_than.as_secs_f64() / 86400.0;
 
         let tx = conn.unchecked_transaction().map_err(|e| {
             SqliteStorageError::TransactionFailed(format!("Transaction failed: {}", e))
         })?;
 
-        // Delete old uploaded sensor readings using uploaded_at for comparison
-        // Use >= to include items exactly at the cutoff boundary
         let sensor_deleted = tx.execute(
             "DELETE FROM sensor_readings WHERE state = 'uploaded' AND uploaded_at IS NOT NULL AND julianday('now') - julianday(uploaded_at) >= ?",
             params![cutoff_days],
         )
         .map_err(|e| SqliteStorageError::QueryFailed(format!("Delete failed: {}", e)))?;
 
-        // Delete old uploaded device statuses
         let device_deleted = tx.execute(
             "DELETE FROM device_statuses WHERE state = 'uploaded' AND uploaded_at IS NOT NULL AND julianday('now') - julianday(uploaded_at) >= ?",
             params![cutoff_days],
