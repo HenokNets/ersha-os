@@ -1,21 +1,6 @@
 mod device;
 mod dispatcher;
 
-#[derive(Debug)]
-pub enum SqliteRegistryError {
-    Sqlx(sqlx::Error),
-    InvalidUlid(String),
-    InvalidTimestamp(i64),
-    InvalidState(i32),
-    NotFound,
-}
-
-impl From<sqlx::Error> for SqliteRegistryError {
-    fn from(e: sqlx::Error) -> Self {
-        Self::Sqlx(e)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use jiff::Timestamp;
