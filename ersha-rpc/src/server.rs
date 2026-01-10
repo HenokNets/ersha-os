@@ -4,13 +4,10 @@ use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{MessageId, RpcTcp, WireMessage};
-use ersha_core::{BatchUploadRequest, HelloRequest};
+use ersha_core::{BatchUploadRequest, BatchUploadResponse, HelloRequest, HelloResponse};
 
-pub type HandlerFn<T> = Box<
-    dyn Fn(T, MessageId, &RpcTcp) -> Pin<Box<dyn Future<Output = WireMessage> + Send>>
-        + Send
-        + Sync,
->;
+pub type HandlerFn<Req, Res> =
+    Box<dyn Fn(Req, MessageId, &RpcTcp) -> Pin<Box<dyn Future<Output = Res> + Send>> + Send + Sync>;
 
 pub struct Server {
     listener: TcpListener,
@@ -19,9 +16,9 @@ pub struct Server {
 }
 
 struct ServerHandlers {
-    on_hello: Option<HandlerFn<HelloRequest>>,
-    on_ping: Option<HandlerFn<()>>,
-    on_batch_upload: Option<HandlerFn<BatchUploadRequest>>,
+    on_ping: Option<HandlerFn<(), ()>>,
+    on_hello: Option<HandlerFn<HelloRequest, HelloResponse>>,
+    on_batch_upload: Option<HandlerFn<BatchUploadRequest, BatchUploadResponse>>,
 }
 
 impl Server {
@@ -45,7 +42,7 @@ impl Server {
     pub fn on_hello<F, Fut>(mut self, handler: F) -> Self
     where
         F: Fn(HelloRequest, MessageId, &RpcTcp) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = WireMessage> + Send + 'static,
+        Fut: Future<Output = HelloResponse> + Send + 'static,
     {
         let handlers = Arc::get_mut(&mut self.handlers).unwrap();
         handlers.on_hello = Some(Box::new(move |hello, msg_id, rpc| {
@@ -57,7 +54,7 @@ impl Server {
     pub fn on_ping<F, Fut>(mut self, handler: F) -> Self
     where
         F: Fn(MessageId, &RpcTcp) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = WireMessage> + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
     {
         let handlers = Arc::get_mut(&mut self.handlers).unwrap();
         handlers.on_ping = Some(Box::new(move |_, msg_id, rpc| {
@@ -69,7 +66,7 @@ impl Server {
     pub fn on_handle_upload<F, Fut>(mut self, handler: F) -> Self
     where
         F: Fn(BatchUploadRequest, MessageId, &RpcTcp) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = WireMessage> + Send + 'static,
+        Fut: Future<Output = BatchUploadResponse> + Send + 'static,
     {
         let handlers = Arc::get_mut(&mut self.handlers).unwrap();
         handlers.on_batch_upload = Some(Box::new(move |request, msg_id, rpc| {
@@ -100,17 +97,18 @@ impl Server {
             match payload {
                 WireMessage::Ping => {
                     if let Some(handler) = &handlers.on_ping {
-                        let response = handler((), msg_id, &rpc).await;
-                        let _ = rpc.reply(msg_id, response).await;
+                        handler((), msg_id, &rpc).await;
+                        let _ = rpc.reply(msg_id, WireMessage::Pong).await;
                     } else {
-                        // Default ping handler: reply with pong
                         let _ = rpc.reply(msg_id, WireMessage::Pong).await;
                     }
                 }
                 WireMessage::HelloRequest(hello) => {
                     if let Some(handler) = &handlers.on_hello {
                         let response = handler(hello, msg_id, &rpc).await;
-                        let _ = rpc.reply(msg_id, response).await;
+                        let _ = rpc
+                            .reply(msg_id, WireMessage::HelloResponse(response))
+                            .await;
                     } else {
                         tracing::warn!("Received Hello but no handler registered");
                     }
@@ -118,7 +116,9 @@ impl Server {
                 WireMessage::BatchUploadRequest(request) => {
                     if let Some(handler) = &handlers.on_batch_upload {
                         let response = handler(request, msg_id, &rpc).await;
-                        let _ = rpc.reply(msg_id, response).await;
+                        let _ = rpc
+                            .reply(msg_id, WireMessage::BatchUploadResponse(response))
+                            .await;
                     } else {
                         tracing::warn!("Received BatchUploadRequest but no handler registered");
                     }
