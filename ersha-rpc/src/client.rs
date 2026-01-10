@@ -1,9 +1,9 @@
-use ersha_core::{BatchUploadRequest, BatchUploadResponse};
+use ersha_core::{BatchUploadRequest, BatchUploadResponse, HelloRequest};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::net::TcpStream;
 
-use crate::{Hello, RpcError, RpcTcp, WireMessage};
+use crate::{RpcError, RpcTcp, WireMessage};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -65,9 +65,9 @@ impl Client {
         }
     }
 
-    pub async fn hello(&self, hello: Hello) -> Result<(), ClientError> {
+    pub async fn hello(&self, hello: HelloRequest) -> Result<(), ClientError> {
         self.rpc
-            .send(WireMessage::Hello(hello))
+            .send(WireMessage::HelloRequest(hello))
             .await
             .map_err(ClientError::from)?;
         Ok(())

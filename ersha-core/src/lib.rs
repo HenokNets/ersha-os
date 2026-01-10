@@ -228,8 +228,20 @@ pub struct BatchUploadRequest {
     pub timestamp: jiff::Timestamp,
 }
 
-// Acknowledgement of a batch upload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct BatchUploadResponse {
     pub id: BatchId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HelloRequest {
+    /// Unique id for this dispatcher.
+    pub dispatcher_id: DispatcherId,
+    /// Dispatcher location cell.
+    pub location: H3Cell,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HelloResponse {
+    pub dispatcher_id: DispatcherId,
 }

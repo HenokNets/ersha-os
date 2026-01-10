@@ -1,4 +1,4 @@
-use ersha_core::{BatchUploadRequest, BatchUploadResponse, DispatcherId, H3Cell};
+use ersha_core::{BatchUploadRequest, BatchUploadResponse, HelloRequest, HelloResponse};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
@@ -14,18 +14,13 @@ pub struct Envelope {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WireMessage {
-    Hello(Hello),
     Ping,
     Pong,
+    HelloRequest(HelloRequest),
+    HelloResponse(HelloResponse),
     BatchUploadRequest(BatchUploadRequest),
     BatchUploadResponse(BatchUploadResponse),
     Error(WireError),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Hello {
-    pub dispatcher_id: DispatcherId,
-    pub location: H3Cell,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

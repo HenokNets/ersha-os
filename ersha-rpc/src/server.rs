@@ -3,8 +3,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::{Hello, MessageId, RpcTcp, WireMessage};
-use ersha_core::BatchUploadRequest;
+use crate::{MessageId, RpcTcp, WireMessage};
+use ersha_core::{BatchUploadRequest, HelloRequest};
 
 pub type HandlerFn<T> = Box<
     dyn Fn(T, MessageId, &RpcTcp) -> Pin<Box<dyn Future<Output = WireMessage> + Send>>
@@ -19,7 +19,7 @@ pub struct Server {
 }
 
 struct ServerHandlers {
-    on_hello: Option<HandlerFn<Hello>>,
+    on_hello: Option<HandlerFn<HelloRequest>>,
     on_ping: Option<HandlerFn<()>>,
     on_batch_upload: Option<HandlerFn<BatchUploadRequest>>,
 }
@@ -44,7 +44,7 @@ impl Server {
 
     pub fn on_hello<F, Fut>(mut self, handler: F) -> Self
     where
-        F: Fn(Hello, MessageId, &RpcTcp) -> Fut + Send + Sync + 'static,
+        F: Fn(HelloRequest, MessageId, &RpcTcp) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = WireMessage> + Send + 'static,
     {
         let handlers = Arc::get_mut(&mut self.handlers).unwrap();
@@ -98,14 +98,6 @@ impl Server {
             let payload = envelope.payload;
 
             match payload {
-                WireMessage::Hello(hello) => {
-                    if let Some(handler) = &handlers.on_hello {
-                        let response = handler(hello, msg_id, &rpc).await;
-                        let _ = rpc.reply(msg_id, response).await;
-                    } else {
-                        tracing::warn!("Received Hello but no handler registered");
-                    }
-                }
                 WireMessage::Ping => {
                     if let Some(handler) = &handlers.on_ping {
                         let response = handler((), msg_id, &rpc).await;
@@ -113,6 +105,14 @@ impl Server {
                     } else {
                         // Default ping handler: reply with pong
                         let _ = rpc.reply(msg_id, WireMessage::Pong).await;
+                    }
+                }
+                WireMessage::HelloRequest(hello) => {
+                    if let Some(handler) = &handlers.on_hello {
+                        let response = handler(hello, msg_id, &rpc).await;
+                        let _ = rpc.reply(msg_id, response).await;
+                    } else {
+                        tracing::warn!("Received Hello but no handler registered");
                     }
                 }
                 WireMessage::BatchUploadRequest(request) => {
@@ -125,6 +125,9 @@ impl Server {
                 }
                 WireMessage::Pong => {
                     tracing::debug!("Received Pong (unexpected on server)");
+                }
+                WireMessage::HelloResponse(_) => {
+                    tracing::debug!("Received BatchUploadResponse (unexpected on server)");
                 }
                 WireMessage::BatchUploadResponse(_) => {
                     tracing::debug!("Received BatchUploadResponse (unexpected on server)");
