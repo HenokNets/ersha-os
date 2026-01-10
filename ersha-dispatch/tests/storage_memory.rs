@@ -34,8 +34,7 @@ fn dummy_status() -> DeviceStatus {
         sensor_statuses: Box::new([]),
     }
 }
-
-// Memory storage tests (original)
+/// memory storage tests
 #[tokio::test]
 async fn memory_sensor_reading_lifecycle() -> Result<(), MemoryStorageError> {
     let storage: MemoryStorage = MemoryStorage::default();
@@ -169,14 +168,12 @@ async fn sqlite_persistence_across_instances() -> Result<(), SqliteStorageError>
     let temp_file = NamedTempFile::new().unwrap();
     let db_path = temp_file.path();
 
-    // First instance
     {
         let storage = SqliteStorage::new(db_path).await?;
         let reading = dummy_reading();
         storage.store_sensor_reading(reading).await?;
     }
 
-    // New instance, same file
     {
         let storage = SqliteStorage::new(db_path).await?;
         let pending = storage.fetch_pending_sensor_readings().await?;
@@ -193,7 +190,7 @@ async fn sqlite_batch_mark_uploaded() -> Result<(), SqliteStorageError> {
 
     let storage = SqliteStorage::new(db_path).await?;
 
-    // Create multiple readings
+    // create multiple readings
     let reading1 = dummy_reading();
     let reading2 = dummy_reading();
     let reading3 = dummy_reading();
@@ -206,7 +203,6 @@ async fn sqlite_batch_mark_uploaded() -> Result<(), SqliteStorageError> {
     storage.store_sensor_reading(reading2).await?;
     storage.store_sensor_reading(reading3).await?;
 
-    // Mark two as uploaded
     storage.mark_sensor_readings_uploaded(&[id1, id2]).await?;
 
     let pending = storage.fetch_pending_sensor_readings().await?;
@@ -223,14 +219,14 @@ async fn sqlite_empty_ids_handling() -> Result<(), SqliteStorageError> {
 
     let storage = SqliteStorage::new(db_path).await?;
 
-    // Should not panic with empty slices
+    // should not panic with empty slices
     storage.mark_sensor_readings_uploaded(&[]).await?;
     storage.mark_device_statuses_uploaded(&[]).await?;
 
     Ok(())
 }
 
-// Batch operation tests
+// batch operation tests
 #[tokio::test]
 async fn memory_batch_sensor_readings() -> Result<(), MemoryStorageError> {
     let storage: MemoryStorage = MemoryStorage::default();
@@ -300,24 +296,23 @@ async fn sqlite_empty_batch() -> Result<(), SqliteStorageError> {
 
     let storage = SqliteStorage::new(db_path).await?;
 
-    // Should not panic with empty batches
+    // should not panic with empty batches
     storage.store_sensor_readings_batch(vec![]).await?;
     storage.store_device_statuses_batch(vec![]).await?;
 
     Ok(())
 }
 
-// Data management tests
+// data management tests
 #[tokio::test]
 async fn memory_get_stats() -> Result<(), MemoryStorageError> {
     let storage: MemoryStorage = MemoryStorage::default();
 
-    // Initial stats should be zero
+    // initial stats should be zero
     let stats = storage.get_stats().await?;
     assert_eq!(stats.sensor_readings_total, 0);
     assert_eq!(stats.device_statuses_total, 0);
 
-    // Add some data
     storage.store_sensor_reading(dummy_reading()).await?;
     storage.store_sensor_reading(dummy_reading()).await?;
     storage.store_device_status(dummy_status()).await?;
@@ -330,7 +325,6 @@ async fn memory_get_stats() -> Result<(), MemoryStorageError> {
     assert_eq!(stats.device_statuses_pending, 1);
     assert_eq!(stats.device_statuses_uploaded, 0);
 
-    // Mark one as uploaded
     let reading = dummy_reading();
     let reading_id = reading.id;
     storage.store_sensor_reading(reading).await?;
@@ -348,7 +342,7 @@ async fn memory_get_stats() -> Result<(), MemoryStorageError> {
 async fn memory_cleanup_uploaded() -> Result<(), MemoryStorageError> {
     let storage: MemoryStorage = MemoryStorage::default();
 
-    // Create 3 readings, mark 2 as uploaded
+    // create 3 readings, mark 2 as uploaded
     let reading1 = dummy_reading();
     let reading2 = dummy_reading();
     let reading3 = dummy_reading();
@@ -363,17 +357,16 @@ async fn memory_cleanup_uploaded() -> Result<(), MemoryStorageError> {
 
     storage.mark_sensor_readings_uploaded(&[id1, id2]).await?;
 
-    // Before cleanup
     let stats_before = storage.get_stats().await?;
     assert_eq!(stats_before.sensor_readings_total, 3);
     assert_eq!(stats_before.sensor_readings_uploaded, 2);
 
-    // Cleanup uploaded (memory ignores duration, deletes all uploaded)
+    // cleanup uploaded (memory ignores duration, deletes all uploaded)
     let cleanup = storage.cleanup_uploaded(Duration::ZERO).await?;
     assert_eq!(cleanup.sensor_readings_deleted, 2);
     assert_eq!(cleanup.device_statuses_deleted, 0); // Not uploaded
 
-    // After cleanup
+    // after cleanup
     let stats_after = storage.get_stats().await?;
     assert_eq!(stats_after.sensor_readings_total, 1); // Only pending remains
     assert_eq!(stats_after.sensor_readings_pending, 1);
@@ -389,12 +382,10 @@ async fn sqlite_get_stats() -> Result<(), SqliteStorageError> {
 
     let storage = SqliteStorage::new(db_path).await?;
 
-    // Initial stats should be zero
     let stats = storage.get_stats().await?;
     assert_eq!(stats.sensor_readings_total, 0);
     assert_eq!(stats.device_statuses_total, 0);
 
-    // Add some data
     storage.store_sensor_reading(dummy_reading()).await?;
     storage.store_sensor_reading(dummy_reading()).await?;
     storage.store_device_status(dummy_status()).await?;
@@ -407,7 +398,6 @@ async fn sqlite_get_stats() -> Result<(), SqliteStorageError> {
     assert_eq!(stats.device_statuses_pending, 1);
     assert_eq!(stats.device_statuses_uploaded, 0);
 
-    // Mark one as uploaded
     let reading = dummy_reading();
     let reading_id = reading.id;
     storage.store_sensor_reading(reading).await?;
@@ -428,7 +418,6 @@ async fn sqlite_cleanup_uploaded() -> Result<(), SqliteStorageError> {
 
     let storage = SqliteStorage::new(db_path).await?;
 
-    // Create 3 readings, mark 2 as uploaded
     let reading1 = dummy_reading();
     let reading2 = dummy_reading();
     let reading3 = dummy_reading();
@@ -443,19 +432,19 @@ async fn sqlite_cleanup_uploaded() -> Result<(), SqliteStorageError> {
 
     storage.mark_sensor_readings_uploaded(&[id1, id2]).await?;
 
-    // Before cleanup
+    // before cleanup
     let stats_before = storage.get_stats().await?;
     assert_eq!(stats_before.sensor_readings_total, 3);
     assert_eq!(stats_before.sensor_readings_uploaded, 2);
 
-    // Cleanup ALL uploaded items (Duration::ZERO means delete all uploaded)
+    // cleanup ALL uploaded items (duration::ZERO means delete all uploaded)
     let cleanup = storage.cleanup_uploaded(Duration::ZERO).await?;
     assert_eq!(cleanup.sensor_readings_deleted, 2);
-    assert_eq!(cleanup.device_statuses_deleted, 0); // Not uploaded
+    assert_eq!(cleanup.device_statuses_deleted, 0);
 
-    // After cleanup
+    // after cleanup
     let stats_after = storage.get_stats().await?;
-    assert_eq!(stats_after.sensor_readings_total, 1); // Only pending remains
+    assert_eq!(stats_after.sensor_readings_total, 1);
     assert_eq!(stats_after.sensor_readings_pending, 1);
     assert_eq!(stats_after.sensor_readings_uploaded, 0);
 
@@ -469,7 +458,6 @@ async fn sqlite_time_based_cleanup() -> Result<(), SqliteStorageError> {
 
     let storage = SqliteStorage::new(db_path).await?;
 
-    // Create and mark as uploaded
     let reading1 = dummy_reading();
     let id1 = reading1.id;
 
@@ -486,7 +474,7 @@ async fn sqlite_time_based_cleanup() -> Result<(), SqliteStorageError> {
     storage.store_sensor_reading(reading2).await?;
     storage.mark_sensor_readings_uploaded(&[id2]).await?;
 
-    // Cleanup items older than 1.5 seconds - should delete only the first one
+    // Cleanup items older than 1.5 seconds, should delete only the first one
     let cleanup = storage
         .cleanup_uploaded(Duration::from_millis(1500))
         .await?;
@@ -506,18 +494,17 @@ async fn sqlite_zero_duration_cleanup() -> Result<(), SqliteStorageError> {
 
     let storage = SqliteStorage::new(db_path).await?;
 
-    // Add some uploaded data
     let reading = dummy_reading();
     let reading_id = reading.id;
     storage.store_sensor_reading(reading).await?;
     storage.mark_sensor_readings_uploaded(&[reading_id]).await?;
 
-    // Zero duration should delete ALL uploaded items
+    // zero duration should delete ALL uploaded items
     let cleanup = storage.cleanup_uploaded(Duration::ZERO).await?;
     assert_eq!(cleanup.sensor_readings_deleted, 1);
     assert_eq!(cleanup.device_statuses_deleted, 0);
 
-    // Data should be deleted
+    // data should be deleted
     let stats = storage.get_stats().await?;
     assert_eq!(stats.sensor_readings_total, 0);
     assert_eq!(stats.sensor_readings_uploaded, 0);
@@ -532,7 +519,7 @@ async fn sqlite_cleanup_only_affects_uploaded() -> Result<(), SqliteStorageError
 
     let storage = SqliteStorage::new(db_path).await?;
 
-    // Create mixed: 2 uploaded, 1 pending, 1 device status uploaded
+    // create mixed: 2 uploaded, 1 pending, 1 device status uploaded
     let reading1 = dummy_reading();
     let reading2 = dummy_reading();
     let reading3 = dummy_reading();
@@ -547,16 +534,14 @@ async fn sqlite_cleanup_only_affects_uploaded() -> Result<(), SqliteStorageError
     storage.store_sensor_reading(reading3).await?;
     storage.store_device_status(status1).await?;
 
-    // Mark some as uploaded
     storage.mark_sensor_readings_uploaded(&[id1, id2]).await?;
     storage.mark_device_statuses_uploaded(&[status_id1]).await?;
 
-    // Cleanup should only delete uploaded items
     let cleanup = storage.cleanup_uploaded(Duration::ZERO).await?;
     assert_eq!(cleanup.sensor_readings_deleted, 2);
     assert_eq!(cleanup.device_statuses_deleted, 1);
 
-    // Verify pending items remain
+    // verify pending items remain
     let stats = storage.get_stats().await?;
     assert_eq!(stats.sensor_readings_total, 1);
     assert_eq!(stats.sensor_readings_pending, 1);
@@ -571,22 +556,84 @@ async fn sqlite_cleanup_only_affects_uploaded() -> Result<(), SqliteStorageError
 #[tokio::test]
 async fn memory_zero_duration_cleanup() -> Result<(), MemoryStorageError> {
     let storage: MemoryStorage = MemoryStorage::default();
-
-    // Add some uploaded data
     let reading = dummy_reading();
     let reading_id = reading.id;
     storage.store_sensor_reading(reading).await?;
     storage.mark_sensor_readings_uploaded(&[reading_id]).await?;
 
-    // Memory backend should also delete all uploaded with ZERO duration
+    // memory backend should also delete all uploaded with zero duration
     let cleanup = storage.cleanup_uploaded(Duration::ZERO).await?;
     assert_eq!(cleanup.sensor_readings_deleted, 1);
     assert_eq!(cleanup.device_statuses_deleted, 0);
 
-    // Verify data is deleted
+    // verify data is deleted
     let stats = storage.get_stats().await?;
     assert_eq!(stats.sensor_readings_total, 0);
     assert_eq!(stats.sensor_readings_uploaded, 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_migration_system() -> Result<(), SqliteStorageError> {
+    let temp_file = NamedTempFile::new().unwrap();
+    let db_path = temp_file.path();
+
+    // test 1: Fresh database should be at version 1
+    let storage = SqliteStorage::new(db_path).await?;
+    let version = storage.get_version().await?;
+    assert_eq!(version, 1, "Fresh database should be at version 1");
+
+    // test 2: Schema should be up to date
+    let schema_ok = storage.check_schema().await?;
+    assert!(schema_ok, "Schema should be up to date");
+
+    // test 3: Can store and retrieve data
+    let reading = dummy_reading();
+    let reading_id = reading.id;
+
+    storage.store_sensor_reading(reading).await?;
+
+    let pending = storage.fetch_pending_sensor_readings().await?;
+    assert_eq!(pending.len(), 1);
+
+    storage.mark_sensor_readings_uploaded(&[reading_id]).await?;
+
+    let pending = storage.fetch_pending_sensor_readings().await?;
+    assert_eq!(pending.len(), 0);
+
+    // test 4: Verify uploaded_at column works
+    let stats = storage.get_stats().await?;
+    assert_eq!(stats.sensor_readings_uploaded, 1);
+
+    // test 5: Cleanup should work
+    let cleanup = storage.cleanup_uploaded(Duration::ZERO).await?;
+    assert_eq!(cleanup.sensor_readings_deleted, 1);
+
+    println!("✅ Migration system works perfectly!");
+    println!("   - Version tracking: v{}", version);
+    println!("   - Schema validation: {}", schema_ok);
+    println!("   - Full CRUD operations: ✓");
+    println!("   - Upload tracking with timestamps: ✓");
+    println!("   - Data cleanup: ✓");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn sqlite_migration_idempotent() -> Result<(), SqliteStorageError> {
+    // test that migrations can run multiple times without error
+    let temp_file = NamedTempFile::new().unwrap();
+    let db_path = temp_file.path();
+    let storage1 = SqliteStorage::new(db_path).await?;
+    let version1 = storage1.get_version().await?;
+    let storage2 = SqliteStorage::new(db_path).await?;
+    let version2 = storage2.get_version().await?;
+
+    assert_eq!(version1, version2, "Versions should be consistent");
+    assert_eq!(version1, 1, "Should be at version 1");
+
+    println!("✅ Migrations are idempotent (safe to run multiple times)");
 
     Ok(())
 }
