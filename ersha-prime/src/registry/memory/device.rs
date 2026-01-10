@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use ersha_core::{Device, DeviceId, DeviceState};
+use ersha_core::{Device, DeviceId, DeviceState, Dispatcher, Sensor};
 
 use crate::registry::{
     DeviceRegistry,
@@ -18,6 +18,40 @@ impl DeviceRegistry for InMemoryDeviceRegistry {
 
     async fn register(&mut self, device: Device) -> Result<(), Self::Error> {
         let _ = self.devices.insert(device.id, device);
+
+        Ok(())
+    }
+
+    async fn add_sensor(&mut self, id: DeviceId, sensor: Sensor) -> Result<(), Self::Error> {
+        let mut device = self
+            .devices
+            .get(&id)
+            .cloned()
+            .ok_or(InMemoryError::NotFound)?;
+
+        device.sensors = device
+            .sensors
+            .into_iter()
+            .chain(std::iter::once(sensor))
+            .collect::<Box<[Sensor]>>();
+
+        let new = Device { ..device };
+        self.devices.insert(id, new);
+        Ok(())
+    }
+
+    async fn add_sensors(&mut self, id: DeviceId, sensors: Vec<Sensor>) -> Result<(), Self::Error> {
+        let mut device = self
+            .devices
+            .get(&id)
+            .cloned()
+            .ok_or(InMemoryError::NotFound)?;
+
+        device.sensors = device
+            .sensors
+            .into_iter()
+            .chain(sensors.into_iter())
+            .collect();
 
         Ok(())
     }
