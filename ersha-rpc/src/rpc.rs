@@ -107,7 +107,10 @@ impl RpcTcp {
             payload,
         };
 
-        self.tx.send(env).await?;
+        if let Err(e) = self.tx.send(env).await {
+            self.pending.remove(&msg_id);
+            return Err(RpcError::SendError(e));
+        }
 
         match tokio::time::timeout(timeout, rx_wait).await {
             Ok(Ok(resp)) => Ok(resp),

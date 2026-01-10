@@ -1,4 +1,4 @@
-use ersha_core::{BatchUploadRequest, BatchUploadResponse, HelloRequest};
+use ersha_core::{BatchUploadRequest, BatchUploadResponse, HelloRequest, HelloResponse};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::net::TcpStream;
@@ -49,7 +49,20 @@ impl Client {
         }
     }
 
-    pub async fn batch_upload_request(
+    pub async fn hello(&self, hello: HelloRequest) -> Result<HelloResponse, ClientError> {
+        let response = self
+            .rpc
+            .call(WireMessage::HelloRequest(hello), self.timeout)
+            .await?;
+
+        match response.payload {
+            WireMessage::HelloResponse(resp) => Ok(resp),
+            WireMessage::Error(err) => Err(ClientError::ErrorResponse(err)),
+            _ => Err(ClientError::UnexpectedResponse),
+        }
+    }
+
+    pub async fn batch_upload(
         &self,
         request: BatchUploadRequest,
     ) -> Result<BatchUploadResponse, ClientError> {
@@ -63,13 +76,5 @@ impl Client {
             WireMessage::Error(err) => Err(ClientError::ErrorResponse(err)),
             _ => Err(ClientError::UnexpectedResponse),
         }
-    }
-
-    pub async fn hello(&self, hello: HelloRequest) -> Result<(), ClientError> {
-        self.rpc
-            .send(WireMessage::HelloRequest(hello))
-            .await
-            .map_err(ClientError::from)?;
-        Ok(())
     }
 }

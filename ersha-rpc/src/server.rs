@@ -63,7 +63,7 @@ impl Server {
         self
     }
 
-    pub fn on_handle_upload<F, Fut>(mut self, handler: F) -> Self
+    pub fn on_batch_upload<F, Fut>(mut self, handler: F) -> Self
     where
         F: Fn(BatchUploadRequest, MessageId, &RpcTcp) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = BatchUploadResponse> + Send + 'static,
@@ -126,11 +126,11 @@ impl Server {
                 WireMessage::Pong => {
                     tracing::debug!("received Pong (unexpected on server)");
                 }
-                WireMessage::HelloResponse(_) => {
-                    tracing::debug!("received BatchUploadResponse (unexpected on server)");
+                WireMessage::HelloResponse(res) => {
+                    tracing::debug!("received HelloResponse (unexpected on server): {res:?}");
                 }
-                WireMessage::BatchUploadResponse(_) => {
-                    tracing::debug!("received BatchUploadResponse (unexpected on server)");
+                WireMessage::BatchUploadResponse(res) => {
+                    tracing::debug!("received BatchUploadResponse (unexpected on server): {res:?}");
                 }
                 WireMessage::Error(err) => {
                     tracing::warn!("received error: {:?}", err);
