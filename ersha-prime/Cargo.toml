@@ -7,4 +7,5 @@ repository = "https://github.com/ersha-os/ersha-os"
 [dependencies]
 ersha-core = { path = "../ersha-core" }
 jiff.workspace = true
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
 ulid.workspace = true
