@@ -123,7 +123,7 @@ impl DeviceFilterBuilder {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DispatcherFilter {
     pub states: Option<Vec<DispatcherState>>,
     pub locations: Option<Vec<H3Cell>>,
