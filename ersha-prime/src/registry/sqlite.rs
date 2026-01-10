@@ -11,11 +11,11 @@ use super::{
     filter::{DispatcherFilter, DispatcherSortBy, QueryOptions},
 };
 
-pub struct SqliteDespatcherRegistry {
+pub struct SqliteDispatcherRegistry {
     pool: SqlitePool,
 }
 
-impl SqliteDespatcherRegistry {
+impl SqliteDispatcherRegistry {
     pub fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
@@ -36,7 +36,7 @@ impl From<sqlx::Error> for SqliteRegistryError {
     }
 }
 
-impl DispatcherRegistry for SqliteDespatcherRegistry {
+impl DispatcherRegistry for SqliteDispatcherRegistry {
     type Error = SqliteRegistryError;
 
     async fn register(&mut self, dispatcher: Dispatcher) -> Result<(), Self::Error> {
@@ -59,9 +59,7 @@ impl DispatcherRegistry for SqliteDespatcherRegistry {
     async fn get(&self, id: DispatcherId) -> Result<Option<Dispatcher>, Self::Error> {
         let row = sqlx::query(
             r#"
-            SELECT id, state, location, provisioned_at
-            FROME dispatchers
-            WHERE id = ?
+            SELECT id, state, location, provisioned_at FROM dispatchers WHERE id = ?
             "#,
         )
         .bind(id.0.to_string())
