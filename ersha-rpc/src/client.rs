@@ -3,7 +3,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::net::TcpStream;
 
-use crate::{RpcError, RpcTcp, WireMessage};
+use crate::{RpcError, RpcTcp, WireError, WireMessage};
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -14,12 +14,12 @@ pub struct Client {
 
 #[derive(Debug, Error)]
 pub enum ClientError {
-    #[error("RPC error: {0}")]
+    #[error("rpc error: {0}")]
     Rpc(#[from] RpcError),
-    #[error("Unexpected response type")]
+    #[error("unexpected response type")]
     UnexpectedResponse,
-    #[error("Error response: {0}")]
-    ErrorResponse(String),
+    #[error("error response: {0:?}")]
+    ErrorResponse(WireError),
 }
 
 impl Client {
@@ -44,7 +44,7 @@ impl Client {
 
         match response.payload {
             WireMessage::Pong => Ok(()),
-            WireMessage::Error(err) => Err(ClientError::ErrorResponse(err.message)),
+            WireMessage::Error(err) => Err(ClientError::ErrorResponse(err)),
             _ => Err(ClientError::UnexpectedResponse),
         }
     }
@@ -60,7 +60,7 @@ impl Client {
 
         match response.payload {
             WireMessage::BatchUploadResponse(resp) => Ok(resp),
-            WireMessage::Error(err) => Err(ClientError::ErrorResponse(err.message)),
+            WireMessage::Error(err) => Err(ClientError::ErrorResponse(err)),
             _ => Err(ClientError::UnexpectedResponse),
         }
     }

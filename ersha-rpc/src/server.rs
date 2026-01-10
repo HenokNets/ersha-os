@@ -86,7 +86,7 @@ impl Server {
             let envelope = match rpc.recv().await {
                 Some(env) => env,
                 None => {
-                    tracing::debug!("Connection closed");
+                    tracing::debug!("connection closed");
                     break;
                 }
             };
@@ -110,7 +110,7 @@ impl Server {
                             .reply(msg_id, WireMessage::HelloResponse(response))
                             .await;
                     } else {
-                        tracing::warn!("Received Hello but no handler registered");
+                        tracing::warn!("received Hello but no handler registered");
                     }
                 }
                 WireMessage::BatchUploadRequest(request) => {
@@ -120,20 +120,20 @@ impl Server {
                             .reply(msg_id, WireMessage::BatchUploadResponse(response))
                             .await;
                     } else {
-                        tracing::warn!("Received BatchUploadRequest but no handler registered");
+                        tracing::warn!("received BatchUploadRequest but no handler registered");
                     }
                 }
                 WireMessage::Pong => {
-                    tracing::debug!("Received Pong (unexpected on server)");
+                    tracing::debug!("received Pong (unexpected on server)");
                 }
                 WireMessage::HelloResponse(_) => {
-                    tracing::debug!("Received BatchUploadResponse (unexpected on server)");
+                    tracing::debug!("received BatchUploadResponse (unexpected on server)");
                 }
                 WireMessage::BatchUploadResponse(_) => {
-                    tracing::debug!("Received BatchUploadResponse (unexpected on server)");
+                    tracing::debug!("received BatchUploadResponse (unexpected on server)");
                 }
                 WireMessage::Error(err) => {
-                    tracing::warn!("Received error: {:?}", err);
+                    tracing::warn!("received error: {:?}", err);
                 }
             }
         }
@@ -150,7 +150,7 @@ impl Server {
                     });
                 }
                 Err(e) => {
-                    tracing::error!("Error accepting connection: {:?}", e);
+                    tracing::error!("error accepting connection: {:?}", e);
                     break;
                 }
             }

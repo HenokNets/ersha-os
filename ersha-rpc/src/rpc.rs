@@ -15,7 +15,7 @@ pub enum RpcError {
     #[error("response channel closed: {0}")]
     ChannelClosed(#[from] oneshot::error::RecvError),
     #[error("timeout: {0}")]
-    Timout(#[from] tokio::time::error::Elapsed),
+    Timeout(#[from] tokio::time::error::Elapsed),
 }
 
 pub struct RpcTcp {
@@ -114,7 +114,7 @@ impl RpcTcp {
             Ok(Err(closed)) => Err(RpcError::ChannelClosed(closed)),
             Err(elapsed) => {
                 self.pending.remove(&msg_id);
-                Err(RpcError::Timout(elapsed))
+                Err(RpcError::Timeout(elapsed))
             }
         }
     }
