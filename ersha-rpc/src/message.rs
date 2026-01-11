@@ -17,14 +17,14 @@ impl Default for MessageId {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
     pub msg_id: MessageId,
     pub reply_to: Option<MessageId>,
     pub payload: WireMessage,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum WireMessage {
     Ping,
     Pong,
@@ -35,13 +35,13 @@ pub enum WireMessage {
     Error(WireError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WireError {
     pub code: WireErrorCode,
     pub message: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub enum WireErrorCode {
     BadRequest,
     Unsupported,
