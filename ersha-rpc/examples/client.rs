@@ -10,7 +10,7 @@ async fn main() {
         .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
         .init();
 
-    let server_addr = "127.0.0.1:8080".to_string();
+    let server_addr = "127.0.0.1:19080".to_string();
 
     info!("connecting to server at {}", server_addr);
 
