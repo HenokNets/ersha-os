@@ -4,6 +4,7 @@ use ersha_core::{
     Device, DeviceId, DeviceKind, DeviceState, H3Cell, Percentage, Sensor, SensorId, SensorKind,
     SensorMetric,
 };
+use ordered_float::NotNan;
 use sqlx::{QueryBuilder, Row, Sqlite, SqlitePool, sqlite::SqliteRow};
 use ulid::Ulid;
 
@@ -155,16 +156,19 @@ impl DeviceRegistry for SqliteDeviceRegistry {
                         value: Percentage(s_row.try_get::<f64, _>("metric_value")? as u8),
                     },
                     1 => SensorMetric::SoilTemp {
-                        value: s_row.try_get::<f64, _>("metric_value")?,
+                        value: NotNan::new(s_row.try_get::<f64, _>("metric_value")?)
+                            .expect("database should not contain NaN"),
                     },
                     2 => SensorMetric::AirTemp {
-                        value: s_row.try_get::<f64, _>("metric_value")?,
+                        value: NotNan::new(s_row.try_get::<f64, _>("metric_value")?)
+                            .expect("database should not contain NaN"),
                     },
                     3 => SensorMetric::Humidity {
                         value: Percentage(s_row.try_get::<f64, _>("metric_value")? as u8),
                     },
                     4 => SensorMetric::Rainfall {
-                        value: s_row.try_get::<f64, _>("metric_value")?,
+                        value: NotNan::new(s_row.try_get::<f64, _>("metric_value")?)
+                            .expect("database should not contain NaN"),
                     },
                     other => return Err(Self::Error::InvalidMetricType(other)),
                 },
@@ -384,16 +388,16 @@ fn map_row_to_sensor(row: SqliteRow) -> Result<Sensor, SqliteDeviceError> {
             value: Percentage(metric_value as u8),
         },
         1 => SensorMetric::SoilTemp {
-            value: metric_value,
+            value: NotNan::new(metric_value).expect("database should not contain NaN"),
         },
         2 => SensorMetric::AirTemp {
-            value: metric_value,
+            value: NotNan::new(metric_value).expect("database should not contain NaN"),
         },
         3 => SensorMetric::Humidity {
             value: Percentage(metric_value as u8),
         },
         4 => SensorMetric::Rainfall {
-            value: metric_value,
+            value: NotNan::new(metric_value).expect("database should not contain NaN"),
         },
         other => return Err(SqliteDeviceError::InvalidMetricType(other)),
     };
@@ -512,9 +516,9 @@ fn filter_devices<'a>(
 fn disect_metric(metric: SensorMetric) -> (i32, f64) {
     match metric {
         SensorMetric::SoilMoisture { value } => (0, value.0 as f64),
-        SensorMetric::SoilTemp { value } => (1, value),
-        SensorMetric::AirTemp { value } => (2, value),
+        SensorMetric::SoilTemp { value } => (1, value.into_inner()),
+        SensorMetric::AirTemp { value } => (2, value.into_inner()),
         SensorMetric::Humidity { value } => (3, value.0 as f64),
-        SensorMetric::Rainfall { value } => (4, value),
+        SensorMetric::Rainfall { value } => (4, value.into_inner()),
     }
 }
