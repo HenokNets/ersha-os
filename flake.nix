@@ -38,6 +38,8 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           buildInputs = [
+            pkgs.bacon
+            pkgs.cargo-dist
             pkgs.rust-analyzer
             pkgs.rust-bin.stable.latest.default
           ];
