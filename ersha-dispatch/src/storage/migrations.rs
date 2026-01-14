@@ -1,15 +1,15 @@
-use rusqlite::{params, Connection};
+use sqlx::{Error as SqlxError, SqlitePool};
 
 #[derive(Debug)]
 pub enum MigrationError {
-    Sqlite(rusqlite::Error),
+    Sqlx(SqlxError),
     VersionError(String),
 }
 
 impl std::fmt::Display for MigrationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MigrationError::Sqlite(e) => write!(f, "SQLite error: {}", e),
+            MigrationError::Sqlx(e) => write!(f, "SQLx error: {}", e),
             MigrationError::VersionError(e) => write!(f, "Version error: {}", e),
         }
     }
@@ -17,78 +17,73 @@ impl std::fmt::Display for MigrationError {
 
 impl std::error::Error for MigrationError {}
 
-impl From<rusqlite::Error> for MigrationError {
-    fn from(err: rusqlite::Error) -> Self {
-        MigrationError::Sqlite(err)
+impl From<SqlxError> for MigrationError {
+    fn from(err: SqlxError) -> Self {
+        MigrationError::Sqlx(err)
     }
 }
 
 pub struct Migrator;
 
 impl Migrator {
-    /// Run all pending migrations safely
-    pub fn run_migrations(conn: &Connection) -> Result<(), MigrationError> {
-        // Create version table if not exists
-        conn.execute(
+    /// run all pending migrations safely
+    pub async fn run_migrations(pool: &SqlitePool) -> Result<(), MigrationError> {
+        // create version table if not exists
+        sqlx::query(
             "CREATE TABLE IF NOT EXISTS schema_version (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 version INTEGER NOT NULL DEFAULT 0
             )",
-            [],
-        )?;
+        )
+        .execute(pool)
+        .await?;
 
-        let current_version: i64 = conn
-            .query_row(
-                "SELECT COALESCE(version, 0) FROM schema_version WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
+        let current_version = Self::get_version(pool).await?;
 
         for migration in MIGRATIONS.iter() {
             if migration.version > current_version {
-                // Start transaction for atomic migration
-                let tx = conn.unchecked_transaction()?;
+                // start transaction for atomic migration
+                let mut tx = pool.begin().await?;
 
-                // Run migration SQL
-                tx.execute_batch(migration.sql)?;
+                // run migration SQL
+                sqlx::query(migration.sql).execute(&mut *tx).await?;
 
-                // Update version
-                tx.execute(
-                    "INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)",
-                    params![migration.version],
-                )?;
+                // update version
+                sqlx::query("INSERT OR REPLACE INTO schema_version (id, version) VALUES (1, ?)")
+                    .bind(migration.version)
+                    .execute(&mut *tx)
+                    .await?;
 
-                tx.commit()?;
+                tx.commit().await?;
             }
         }
 
         Ok(())
     }
 
-    /// Get current database version
-    pub fn get_version(conn: &Connection) -> Result<i64, MigrationError> {
-        let version: i64 = conn
-            .query_row(
-                "SELECT COALESCE(version, 0) FROM schema_version WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap_or(0);
-        Ok(version)
+    /// get current database version
+    pub async fn get_version(pool: &SqlitePool) -> Result<i64, MigrationError> {
+        let result: Option<(i64,)> =
+            sqlx::query_as("SELECT COALESCE(version, 0) FROM schema_version WHERE id = 1")
+                .fetch_optional(pool)
+                .await?;
+
+        Ok(result.map(|(v,)| v).unwrap_or(0))
     }
 
-    pub fn column_exists(
-        conn: &Connection,
+    pub async fn column_exists(
+        pool: &SqlitePool,
         table: &str,
         column: &str,
-    ) -> Result<bool, rusqlite::Error> {
-        let exists: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?",
-            params![table, column],
-            |row| row.get(0),
-        )?;
-        Ok(exists > 0)
+    ) -> Result<bool, SqlxError> {
+        let result: Option<(i64,)> =
+            sqlx::query_as("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?")
+                .bind(table)
+                .bind(column)
+                .fetch_optional(pool)
+                .await?;
+
+        Ok(result.map(|(count,)| count > 0).unwrap_or(false))
     }
 }
 
