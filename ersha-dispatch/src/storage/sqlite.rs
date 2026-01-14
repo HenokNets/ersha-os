@@ -1,11 +1,8 @@
 use async_trait::async_trait;
-use rusqlite::{params, Connection, Error as RusqliteError, Row};
-use serde_json::Error as SerdeJsonError;
+use sqlx::{Error as SqlxError, Row, SqlitePool};
 use std::fmt;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
 
 use crate::storage::migrations::Migrator;
 use crate::storage::{CleanupStats, Storage, StorageStats};
@@ -13,7 +10,7 @@ use ersha_core::{DeviceStatus, ReadingId, SensorReading, StatusId};
 
 #[derive(Clone)]
 pub struct SqliteStorage {
-    conn: Arc<Mutex<Connection>>,
+    pool: SqlitePool,
 }
 
 #[derive(Debug)]
@@ -27,6 +24,7 @@ pub enum SqliteStorageError {
     UpdateFailed(String),
     RowProcessingFailed(String),
     TimeConversionFailed(String),
+    PoolError(String),
 }
 
 impl std::error::Error for SqliteStorageError {}
@@ -53,53 +51,55 @@ impl fmt::Display for SqliteStorageError {
             SqliteStorageError::TimeConversionFailed(msg) => {
                 write!(f, "Time conversion failed: {}", msg)
             }
+            SqliteStorageError::PoolError(msg) => write!(f, "Pool error: {}", msg),
         }
     }
 }
 
-impl From<RusqliteError> for SqliteStorageError {
-    fn from(err: RusqliteError) -> Self {
+impl From<SqlxError> for SqliteStorageError {
+    fn from(err: SqlxError) -> Self {
         SqliteStorageError::QueryFailed(err.to_string())
     }
 }
 
-impl From<SerdeJsonError> for SqliteStorageError {
-    fn from(err: SerdeJsonError) -> Self {
+impl From<serde_json::Error> for SqliteStorageError {
+    fn from(err: serde_json::Error) -> Self {
         SqliteStorageError::SerializationFailed(err.to_string())
     }
 }
 
 impl SqliteStorage {
-    /// Create new SQLite storage with automatic migrations
+    /// create new SQLite storage with automatic migrations
     pub async fn new<P: AsRef<Path>>(path: P) -> Result<Self, SqliteStorageError> {
-        let conn = Connection::open(path).map_err(|e| {
-            SqliteStorageError::ConnectionFailed(format!("Failed to open SQLite DB: {}", e))
+        let database_url = format!("sqlite:{}", path.as_ref().display());
+        let pool = SqlitePool::connect(&database_url).await.map_err(|e| {
+            SqliteStorageError::ConnectionFailed(format!("Failed to connect to SQLite DB: {}", e))
         })?;
 
-        // Enable WAL for better concurrency
-        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        // enable WAL for better concurrency
+        sqlx::query("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
+            .execute(&pool)
+            .await?;
 
-        // Run migrations first
-        Self::run_migrations(&conn)?;
+        // run migrations first
+        Self::run_migrations(&pool).await?;
 
-        // Ensure all indexes exist
-        Self::ensure_indexes(&conn)?;
+        // ensure all indexes exist
+        Self::ensure_indexes(&pool).await?;
 
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-        })
+        Ok(Self { pool })
     }
 
-    /// Run database migrations
-    fn run_migrations(conn: &Connection) -> Result<(), SqliteStorageError> {
-        Migrator::run_migrations(conn).map_err(|e| {
+    /// run database migrations
+    async fn run_migrations(pool: &SqlitePool) -> Result<(), SqliteStorageError> {
+        Migrator::run_migrations(pool).await.map_err(|e| {
             SqliteStorageError::SchemaCreationFailed(format!("Migration failed: {}", e))
         })
     }
 
-    /// Ensure all necessary indexes exist
-    fn ensure_indexes(conn: &Connection) -> Result<(), SqliteStorageError> {
-        conn.execute_batch(
+    /// ensure all necessary indexes exist
+    async fn ensure_indexes(pool: &SqlitePool) -> Result<(), SqliteStorageError> {
+        sqlx::query(
             r#"
             -- Ensure all indexes exist (idempotent)
             CREATE INDEX IF NOT EXISTS idx_sensor_readings_state ON sensor_readings(state);
@@ -109,13 +109,15 @@ impl SqliteStorage {
             CREATE INDEX IF NOT EXISTS idx_sensor_readings_created_at ON sensor_readings(created_at);
             CREATE INDEX IF NOT EXISTS idx_device_statuses_created_at ON device_statuses(created_at);
             "#,
-        )?;
+        )
+            .execute(pool)
+        .await?;
         Ok(())
     }
 
     pub async fn get_version(&self) -> Result<i64, SqliteStorageError> {
-        let conn = self.conn.lock().await;
-        Migrator::get_version(&conn)
+        Migrator::get_version(&self.pool)
+            .await
             .map_err(|e| SqliteStorageError::QueryFailed(format!("Failed to get version: {}", e)))
     }
 
@@ -124,19 +126,19 @@ impl SqliteStorage {
         Ok(version >= 1) // version 1 is our current schema
     }
 
-    fn serialize_reading(reading: &SensorReading) -> Result<String, SerdeJsonError> {
+    fn serialize_reading(reading: &SensorReading) -> Result<String, serde_json::Error> {
         serde_json::to_string(reading)
     }
 
-    fn deserialize_reading(json: &str) -> Result<SensorReading, SerdeJsonError> {
+    fn deserialize_reading(json: &str) -> Result<SensorReading, serde_json::Error> {
         serde_json::from_str(json)
     }
 
-    fn serialize_status(status: &DeviceStatus) -> Result<String, SerdeJsonError> {
+    fn serialize_status(status: &DeviceStatus) -> Result<String, serde_json::Error> {
         serde_json::to_string(status)
     }
 
-    fn deserialize_status(json: &str) -> Result<DeviceStatus, SerdeJsonError> {
+    fn deserialize_status(json: &str) -> Result<DeviceStatus, serde_json::Error> {
         serde_json::from_str(json)
     }
 }
@@ -149,12 +151,13 @@ impl Storage for SqliteStorage {
         let json = Self::serialize_reading(&reading)?;
         let id_str = reading.id.0.to_string();
 
-        let conn = self.conn.lock().await;
-
-        conn.execute(
+        sqlx::query(
             "INSERT INTO sensor_readings (id, reading_json, state) VALUES (?, ?, 'pending')",
-            params![id_str, json],
-        )?;
+        )
+        .bind(&id_str)
+        .bind(&json)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -163,12 +166,13 @@ impl Storage for SqliteStorage {
         let json = Self::serialize_status(&status)?;
         let id_str = status.id.0.to_string();
 
-        let conn = self.conn.lock().await;
-
-        conn.execute(
+        sqlx::query(
             "INSERT INTO device_statuses (id, status_json, state) VALUES (?, ?, 'pending')",
-            params![id_str, json],
-        )?;
+        )
+        .bind(&id_str)
+        .bind(&json)
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -181,23 +185,26 @@ impl Storage for SqliteStorage {
             return Ok(());
         }
 
-        let conn = self.conn.lock().await;
-        let tx = conn.unchecked_transaction().map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Transaction failed: {}", e))
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
         })?;
 
         for reading in readings {
             let json = Self::serialize_reading(&reading)?;
             let id_str = reading.id.0.to_string();
 
-            tx.execute(
+            sqlx::query(
                 "INSERT INTO sensor_readings (id, reading_json, state) VALUES (?, ?, 'pending')",
-                params![id_str, json],
             )
+            .bind(&id_str)
+            .bind(&json)
+            .execute(&mut *tx)
+            .await
             .map_err(|e| SqliteStorageError::QueryFailed(format!("Insert failed: {}", e)))?;
         }
 
         tx.commit()
+            .await
             .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
 
         Ok(())
@@ -211,47 +218,42 @@ impl Storage for SqliteStorage {
             return Ok(());
         }
 
-        let conn = self.conn.lock().await;
-        let tx = conn.unchecked_transaction().map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Transaction failed: {}", e))
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
         })?;
 
         for status in statuses {
             let json = Self::serialize_status(&status)?;
             let id_str = status.id.0.to_string();
 
-            tx.execute(
+            sqlx::query(
                 "INSERT INTO device_statuses (id, status_json, state) VALUES (?, ?, 'pending')",
-                params![id_str, json],
             )
+            .bind(&id_str)
+            .bind(&json)
+            .execute(&mut *tx)
+            .await
             .map_err(|e| SqliteStorageError::QueryFailed(format!("Insert failed: {}", e)))?;
         }
 
         tx.commit()
+            .await
             .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
 
         Ok(())
     }
 
     async fn fetch_pending_sensor_readings(&self) -> Result<Vec<SensorReading>, Self::Error> {
-        let conn = self.conn.lock().await;
-
-        let mut stmt =
-            conn.prepare("SELECT reading_json FROM sensor_readings WHERE state = 'pending'")?;
-
-        let rows = stmt.query_map([], |row: &Row| {
-            let json: String = row.get(0)?;
-            Ok(json)
-        })?;
+        let rows = sqlx::query("SELECT reading_json FROM sensor_readings WHERE state = 'pending'")
+            .fetch_all(&self.pool)
+            .await?;
 
         let mut readings = Vec::new();
-        for row_result in rows {
-            let json = row_result.map_err(|e| {
-                SqliteStorageError::RowProcessingFailed(format!("Row error: {}", e))
+        for row in rows {
+            let json: String = row.try_get("reading_json").map_err(|e| {
+                SqliteStorageError::RowProcessingFailed(format!("Failed to get column: {}", e))
             })?;
-            let reading = Self::deserialize_reading(&json).map_err(|e| {
-                SqliteStorageError::DeserializationFailed(format!("Deserialization error: {}", e))
-            })?;
+            let reading = Self::deserialize_reading(&json)?;
             readings.push(reading);
         }
 
@@ -259,24 +261,16 @@ impl Storage for SqliteStorage {
     }
 
     async fn fetch_pending_device_statuses(&self) -> Result<Vec<DeviceStatus>, Self::Error> {
-        let conn = self.conn.lock().await;
-
-        let mut stmt =
-            conn.prepare("SELECT status_json FROM device_statuses WHERE state = 'pending'")?;
-
-        let rows = stmt.query_map([], |row: &Row| {
-            let json: String = row.get(0)?;
-            Ok(json)
-        })?;
+        let rows = sqlx::query("SELECT status_json FROM device_statuses WHERE state = 'pending'")
+            .fetch_all(&self.pool)
+            .await?;
 
         let mut statuses = Vec::new();
-        for row_result in rows {
-            let json = row_result.map_err(|e| {
-                SqliteStorageError::RowProcessingFailed(format!("Row error: {}", e))
+        for row in rows {
+            let json: String = row.try_get("status_json").map_err(|e| {
+                SqliteStorageError::RowProcessingFailed(format!("Failed to get column: {}", e))
             })?;
-            let status = Self::deserialize_status(&json).map_err(|e| {
-                SqliteStorageError::DeserializationFailed(format!("Deserialization error: {}", e))
-            })?;
+            let status = Self::deserialize_status(&json)?;
             statuses.push(status);
         }
 
@@ -288,21 +282,24 @@ impl Storage for SqliteStorage {
             return Ok(());
         }
 
-        let conn = self.conn.lock().await;
-        let tx = conn.unchecked_transaction().map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Transaction failed: {}", e))
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
         })?;
 
         for id in ids {
             let id_str = id.0.to_string();
-            tx.execute(
+
+            sqlx::query(
                 "UPDATE sensor_readings SET state = 'uploaded', uploaded_at = CURRENT_TIMESTAMP WHERE id = ?",
-                params![id_str],
             )
-            .map_err(|e| SqliteStorageError::UpdateFailed(format!("Update failed for {}: {}", id_str, e)))?;
+                .bind(&id_str)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| SqliteStorageError::UpdateFailed(format!("Update failed for {}: {}", id_str, e)))?;
         }
 
         tx.commit()
+            .await
             .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
 
         Ok(())
@@ -313,119 +310,121 @@ impl Storage for SqliteStorage {
             return Ok(());
         }
 
-        let conn = self.conn.lock().await;
-        let tx = conn.unchecked_transaction().map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Transaction failed: {}", e))
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
         })?;
 
         for id in ids {
             let id_str = id.0.to_string();
-            tx.execute(
+
+            sqlx::query(
                 "UPDATE device_statuses SET state = 'uploaded', uploaded_at = CURRENT_TIMESTAMP WHERE id = ?",
-                params![id_str],
             )
-            .map_err(|e| SqliteStorageError::UpdateFailed(format!("Update failed for {}: {}", id_str, e)))?;
+                .bind(&id_str)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| SqliteStorageError::UpdateFailed(format!("Update failed for {}: {}", id_str, e)))?;
         }
 
         tx.commit()
+            .await
             .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
 
         Ok(())
     }
 
     async fn get_stats(&self) -> Result<StorageStats, Self::Error> {
-        let conn = self.conn.lock().await;
-
-        let sensor_stats = conn.query_row(
-            "SELECT 
+        let sensor_stats: (i64, i64, i64) = sqlx::query_as(
+            r#"
+            SELECT 
                 COUNT(*) as total,
                 COALESCE(SUM(CASE WHEN state = 'pending' THEN 1 ELSE 0 END), 0) as pending,
                 COALESCE(SUM(CASE WHEN state = 'uploaded' THEN 1 ELSE 0 END), 0) as uploaded
-             FROM sensor_readings",
-            [],
-            |row| {
-                let total: i64 = row.get(0)?;
-                let pending: i64 = row.get(1)?;
-                let uploaded: i64 = row.get(2)?;
-                Ok((total as usize, pending as usize, uploaded as usize))
-            },
-        )?;
+             FROM sensor_readings
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?;
 
-        let device_stats = conn.query_row(
-            "SELECT 
+        let device_stats: (i64, i64, i64) = sqlx::query_as(
+            r#"
+            SELECT 
                 COUNT(*) as total,
                 COALESCE(SUM(CASE WHEN state = 'pending' THEN 1 ELSE 0 END), 0) as pending,
                 COALESCE(SUM(CASE WHEN state = 'uploaded' THEN 1 ELSE 0 END), 0) as uploaded
-             FROM device_statuses",
-            [],
-            |row| {
-                let total: i64 = row.get(0)?;
-                let pending: i64 = row.get(1)?;
-                let uploaded: i64 = row.get(2)?;
-                Ok((total as usize, pending as usize, uploaded as usize))
-            },
-        )?;
+             FROM device_statuses
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await?;
 
         Ok(StorageStats {
-            sensor_readings_total: sensor_stats.0,
-            sensor_readings_pending: sensor_stats.1,
-            sensor_readings_uploaded: sensor_stats.2,
-            device_statuses_total: device_stats.0,
-            device_statuses_pending: device_stats.1,
-            device_statuses_uploaded: device_stats.2,
+            sensor_readings_total: sensor_stats.0 as usize,
+            sensor_readings_pending: sensor_stats.1 as usize,
+            sensor_readings_uploaded: sensor_stats.2 as usize,
+            device_statuses_total: device_stats.0 as usize,
+            device_statuses_pending: device_stats.1 as usize,
+            device_statuses_uploaded: device_stats.2 as usize,
         })
     }
 
     async fn cleanup_uploaded(&self, older_than: Duration) -> Result<CleanupStats, Self::Error> {
-        let conn = self.conn.lock().await;
-
         if older_than == Duration::ZERO {
-            let tx = conn.unchecked_transaction().map_err(|e| {
-                SqliteStorageError::TransactionFailed(format!("Transaction failed: {}", e))
+            let mut tx = self.pool.begin().await.map_err(|e| {
+                SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
             })?;
 
-            let sensor_deleted = tx
-                .execute("DELETE FROM sensor_readings WHERE state = 'uploaded'", [])
-                .map_err(|e| SqliteStorageError::QueryFailed(format!("Delete failed: {}", e)))?;
+            let sensor_deleted =
+                sqlx::query("DELETE FROM sensor_readings WHERE state = 'uploaded'")
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected();
 
-            let device_deleted = tx
-                .execute("DELETE FROM device_statuses WHERE state = 'uploaded'", [])
-                .map_err(|e| SqliteStorageError::QueryFailed(format!("Delete failed: {}", e)))?;
+            let device_deleted =
+                sqlx::query("DELETE FROM device_statuses WHERE state = 'uploaded'")
+                    .execute(&mut *tx)
+                    .await?
+                    .rows_affected();
 
-            tx.commit().map_err(|e| {
+            tx.commit().await.map_err(|e| {
                 SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e))
             })?;
 
             return Ok(CleanupStats {
-                sensor_readings_deleted: sensor_deleted,
-                device_statuses_deleted: device_deleted,
+                sensor_readings_deleted: sensor_deleted as usize,
+                device_statuses_deleted: device_deleted as usize,
             });
         }
 
         let cutoff_days = older_than.as_secs_f64() / 86400.0;
 
-        let tx = conn.unchecked_transaction().map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Transaction failed: {}", e))
+        let mut tx = self.pool.begin().await.map_err(|e| {
+            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
         })?;
 
-        let sensor_deleted = tx.execute(
+        let sensor_deleted = sqlx::query(
             "DELETE FROM sensor_readings WHERE state = 'uploaded' AND uploaded_at IS NOT NULL AND julianday('now') - julianday(uploaded_at) >= ?",
-            params![cutoff_days],
         )
-        .map_err(|e| SqliteStorageError::QueryFailed(format!("Delete failed: {}", e)))?;
+            .bind(cutoff_days)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
 
-        let device_deleted = tx.execute(
+        let device_deleted = sqlx::query(
             "DELETE FROM device_statuses WHERE state = 'uploaded' AND uploaded_at IS NOT NULL AND julianday('now') - julianday(uploaded_at) >= ?",
-            params![cutoff_days],
         )
-        .map_err(|e| SqliteStorageError::QueryFailed(format!("Delete failed: {}", e)))?;
+            .bind(cutoff_days)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
 
         tx.commit()
+            .await
             .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
 
         Ok(CleanupStats {
-            sensor_readings_deleted: sensor_deleted,
-            device_statuses_deleted: device_deleted,
+            sensor_readings_deleted: sensor_deleted as usize,
+            device_statuses_deleted: device_deleted as usize,
         })
     }
 }
