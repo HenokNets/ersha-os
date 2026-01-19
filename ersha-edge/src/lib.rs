@@ -117,33 +117,41 @@ impl Reading {
     }
 }
 
-pub trait Uplink {
-    fn send(&self, reading: Reading) -> impl Future<Output = Result<(), UplinkError>>;
+pub trait Transport {
+    type Error;
+
+    fn ready(&mut self) -> impl Future<Output = Result<(), Self::Error>>;
+    fn send(&self, reading: Reading) -> impl Future<Output = Result<(), Self::Error>>;
+    fn receive(&self, buf: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
 }
 
-pub struct Engine<C: Uplink> {
-    host: C,
+pub struct Engine<T: Transport> {
+    transport: T,
     device_id: u32,
 }
 
-impl<C> Engine<C>
+impl<T> Engine<T>
 where
-    C: Uplink,
+    T: Transport,
 {
-    pub fn new(host: C, device_id: u32) -> Self {
-        Self { host, device_id }
+    pub fn new(host: T, device_id: u32) -> Self {
+        Self {
+            transport: host,
+            device_id,
+        }
     }
 
-    pub async fn run(self) {
+    pub async fn run(mut self) {
         let receiver = READING_CHANNEL.receiver();
         let mut reading_id = 0;
+        let _ = self.transport.ready().await;
 
         loop {
             match receiver.receive().await {
                 SensorMetric::SoilMoisture { value } => {
                     info!("LoRaWAN Sending: Soil Moisture {}%", value);
                     let _ = self
-                        .host
+                        .transport
                         .send(Reading {
                             value: value.0 as u32,
                             reading_id,
@@ -159,7 +167,7 @@ where
                     info!("LoRaWAN Sending: Air Temp {} C", value);
 
                     let _ = self
-                        .host
+                        .transport
                         .send(Reading {
                             value: value.into_inner() as u32,
                             reading_id,
