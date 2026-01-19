@@ -42,25 +42,38 @@
 //! ```
 
 #![no_std]
-#![allow(dead_code)]
 
 use defmt::info;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel, Sender};
 use embassy_time::{Duration, Timer};
-use ersha_core::{SensorKind, SensorMetric};
 
 const SENSOR_PER_DEVICE: usize = 8;
+
+// TODO: consolidate with ersha-core::SensorMetric after
+// resolveing no_std issues.
+#[derive(Debug, Clone)]
+pub enum SensorMetric {
+    /// Soil moisture as a percentage.
+    SoilMoisture { value: u8 },
+    /// Soil temperature in degrees Celsius.
+    SoilTemp { value: f32 },
+    /// Air temperature in degrees Celsius.
+    AirTemp { value: f32 },
+    /// Relative humidity as a percentage.
+    Humidity { value: u8 },
+    /// Rainfall in millimeters.
+    Rainfall { value: f32 },
+}
 
 static READING_CHANNEL: Channel<CriticalSectionRawMutex, SensorMetric, SENSOR_PER_DEVICE> =
     Channel::new();
 
-fn sender() -> Sender<'static, CriticalSectionRawMutex, SensorMetric, SENSOR_PER_DEVICE> {
+pub fn sender() -> Sender<'static, CriticalSectionRawMutex, SensorMetric, SENSOR_PER_DEVICE> {
     READING_CHANNEL.sender()
 }
 
 pub struct SensorConfig {
-    pub kind: SensorKind,
     pub sampling_rate: Duration,
     pub calibration_offset: f32,
 }
@@ -153,7 +166,7 @@ where
                     let _ = self
                         .transport
                         .send(Reading {
-                            value: value.0 as u32,
+                            value: value as u32,
                             reading_id,
                             metric: 0, // SoilMoisture { value: Percentage },
                             sensor_id: 0x12,
@@ -169,7 +182,7 @@ where
                     let _ = self
                         .transport
                         .send(Reading {
-                            value: value.into_inner() as u32,
+                            value: value as u32,
                             reading_id,
                             metric: 2, // AirTemp { value: NotNan<f64> },
                             sensor_id: 0x13,
@@ -199,7 +212,6 @@ macro_rules! sensor_task {
 
             loop {
                 let config = sensor.config();
-                info!("Reading sensor kind: {:?}", config.kind);
 
                 match sensor.read().await {
                     Ok(reading) => {
@@ -226,18 +238,13 @@ mod tests {
     impl Sensor for MockSoilSensor {
         fn config(&self) -> SensorConfig {
             SensorConfig {
-                kind: SensorKind::SoilMoisture,
                 sampling_rate: Duration::from_millis(10),
                 calibration_offset: 0.0,
             }
         }
 
         fn read(&self) -> impl core::future::Future<Output = Result<SensorMetric, SensorError>> {
-            async move {
-                Ok(SensorMetric::SoilMoisture {
-                    value: ersha_core::Percentage(42),
-                })
-            }
+            async move { Ok(SensorMetric::SoilMoisture { value: 42 }) }
         }
     }
 

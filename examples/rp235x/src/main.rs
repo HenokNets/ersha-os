@@ -13,6 +13,8 @@ use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
+use ersha_edge::{Sensor, SensorConfig, SensorError, SensorMetric, sensor_task};
+
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
@@ -26,6 +28,23 @@ async fn cyw43_task(
 ) -> ! {
     runner.run().await
 }
+
+pub struct MockSoilMoistureSensor;
+
+impl Sensor for MockSoilMoistureSensor {
+    fn config(&self) -> SensorConfig {
+        SensorConfig {
+            sampling_rate: Duration::from_secs(1),
+            calibration_offset: 0.0,
+        }
+    }
+
+    async fn read(&self) -> Result<SensorMetric, SensorError> {
+        Ok(SensorMetric::SoilMoisture { value: 32 })
+    }
+}
+
+sensor_task!(soil_moisture, MockSoilMoistureSensor);
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
