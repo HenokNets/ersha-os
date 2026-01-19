@@ -17,10 +17,13 @@ use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-use ersha_edge::{Sensor, SensorConfig, SensorError, SensorMetric, sensor_task};
+use ersha_edge::{Sensor, SensorConfig, SensorError, SensorMetric, sensor_task, Wifi, Engine};
 
 const WIFI_NETWORK: &str = "ssid";
 const WIFI_PASSWORD: &str = "password";
+
+static RX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
+static TX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
@@ -120,6 +123,14 @@ async fn main(spawner: Spawner) {
 
     info!("Stack is up!");
 
+    let rx_buffer = RX_BUFFER.init([0; 4096]);
+    let tx_buffer = TX_BUFFER.init([0; 4096]);
+
+    let wifi = Wifi::new(stack, rx_buffer, tx_buffer);
+    let engine = Engine::new(wifi, 0x1337);
+
+    spawner.spawn(unwrap!(ersha_wifi(engine)));
+
     let delay = Duration::from_millis(250);
     loop {
         info!("led on!");
@@ -130,4 +141,9 @@ async fn main(spawner: Spawner) {
         control.gpio_set(0, false).await;
         Timer::after(delay).await;
     }
+}
+
+#[embassy_executor::task]
+async fn ersha_wifi(runner: Engine<Wifi<'static>>) {
+    runner.run().await
 }
