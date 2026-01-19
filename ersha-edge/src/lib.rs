@@ -48,7 +48,14 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel, Sender};
 use embassy_time::{Duration, Timer};
 
+use embassy_net::{IpAddress, IpEndpoint, Stack, tcp::TcpSocket};
+
 const SENSOR_PER_DEVICE: usize = 8;
+
+const SERVER_ADDR: IpEndpoint = IpEndpoint {
+    addr: IpAddress::v4(192, 168, 8, 1),
+    port: 9001,
+};
 
 // TODO: consolidate with ersha-core::SensorMetric after
 // resolveing no_std issues.
@@ -91,6 +98,8 @@ pub trait Sensor {
 
 pub enum UplinkError {
     InvalidAuth,
+    UnableToSend,
+    ServerNotFound,
 }
 
 pub struct Reading {
@@ -131,11 +140,9 @@ impl Reading {
 }
 
 pub trait Transport {
-    type Error;
-
-    fn ready(&mut self) -> impl Future<Output = Result<(), Self::Error>>;
-    fn send(&self, reading: Reading) -> impl Future<Output = Result<(), Self::Error>>;
-    fn receive(&self, buf: &mut [u8]) -> impl Future<Output = Result<usize, Self::Error>>;
+    fn ready(&mut self) -> impl Future<Output = Result<(), UplinkError>>;
+    fn send(&mut self, reading: Reading) -> impl Future<Output = Result<usize, UplinkError>>;
+    fn receive(&self, buf: &mut [u8]) -> impl Future<Output = Result<usize, UplinkError>>;
 }
 
 pub struct Engine<T: Transport> {
@@ -228,7 +235,43 @@ macro_rules! sensor_task {
     };
 }
 
+pub struct Wifi<'a> {
+    socket: TcpSocket<'a>,
+}
+
+impl<'a> Wifi<'a> {
+    pub fn new(stack: Stack<'a>, rx_buffer: &'a mut [u8], tx_buffer: &'a mut [u8]) -> Self {
+        Self {
+            socket: TcpSocket::new(stack, rx_buffer, tx_buffer),
+        }
+    }
+}
+
+impl<'a> Transport for Wifi<'a> {
+    async fn ready(&mut self) -> Result<(), UplinkError> {
+        self.socket.set_timeout(Some(Duration::from_secs(10)));
+        self.socket
+            .connect(SERVER_ADDR)
+            .await
+            .map_err(|_| UplinkError::ServerNotFound)?;
+
+        Ok(())
+    }
+
+    async fn send(&mut self, reading: Reading) -> Result<usize, UplinkError> {
+        self.socket
+            .write(&reading.to_bytes())
+            .await
+            .map_err(|_| UplinkError::UnableToSend)
+    }
+
+    async fn receive(&self, _buf: &mut [u8]) -> Result<usize, UplinkError> {
+        Ok(0)
+    }
+}
+
 #[cfg(test)]
+#[allow(dead_code)]
 mod tests {
     use super::*;
     use embassy_time::Duration;
