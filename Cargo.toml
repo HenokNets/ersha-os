@@ -28,6 +28,14 @@ features = [
 version = "1.2.1"
 features = ["serde"]
 
+[workspace.dependencies.serde]
+version = "1.0.228"
+features = ["derive"]
+
+[workspace.dependencies.sqlx]
+version = "0.8"
+features = ["sqlite", "runtime-tokio", "macros", "migrate"]
+
 [profile.dist]
 lto = "thin"
 inherits = "release"

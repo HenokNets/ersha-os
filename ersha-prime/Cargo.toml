@@ -8,6 +8,6 @@ repository = "https://github.com/ersha-os/ersha-os"
 ersha-core = { path = "../ersha-core" }
 jiff.workspace = true
 ordered-float.workspace = true
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite"] }
+sqlx.workspace = true
 ulid.workspace = true
 tokio.workspace = true

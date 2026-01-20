@@ -5,6 +5,6 @@ edition = "2024"
 
 [dependencies]
 ordered-float.workspace = true
-serde = { version = "1.0.228", features = ["derive"] }
+serde.workspace = true
 ulid.workspace = true
 jiff.workspace = true
