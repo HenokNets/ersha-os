@@ -1,54 +1,12 @@
-//! ```ignore
-//! #![no_std]
-//!
-//! use core::future::Future;
-//! use embassy_executor::Executor;
-//! use embassy_executor::Spawner;
-//! use embassy_time::{Duration, Timer};
-//! use ersha_edge::{Sensor, SensorConfig, SensorError, SensorMetric, sensor_task};
-//! use defmt::info;
-//!
-//! pub struct MySoilSensor;
-//!
-//! impl Sensor for MySoilSensor {
-//!
-//!     fn config(&self) -> SensorConfig {
-//!         SensorConfig {
-//!             kind: ersha_core::SensorKind::SoilMoisture,
-//!             sampling_rate: Duration::from_millis(500),
-//!             calibration_offset: 0.0,
-//!         }
-//!     }
-//!
-//!     async fn read(&self) -> Self::ReadFuture<'_> {
-//!         Ok(SensorMetric::SoilMoisture { value: ersha_core::Percentage(42) })
-//!     }
-//! }
-//!
-//! // Generate an embassy task for the sensor
-//! sensor_task!(soil_task, MySoilSensor);
-//!
-//! // Example of spawning and running the executor
-//! #[embassy_executor::main]
-//! async fn main(spawner: Spawner) {
-//!     static SENSOR: MySoilSensor = MySoilSensor;
-//!
-//!     // Spawn the sensor task
-//!     spawner.spawn(soil_task(&SENSOR)).unwrap();
-//!
-//!     // Start the library's central processing loop
-//!     ersha_edge::start().await;
-//! }
-//! ```
-
 #![no_std]
 
-use defmt::info;
+use defmt::{Format, error, info};
+use embassy_net::{IpAddress, IpEndpoint, Stack, tcp::TcpSocket};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel, Sender};
 use embassy_time::{Duration, Timer};
-
-use embassy_net::{IpAddress, IpEndpoint, Stack, tcp::TcpSocket};
+use postcard::to_slice;
+use serde::{Deserialize, Serialize};
 
 const SENSOR_PER_DEVICE: usize = 8;
 
@@ -59,18 +17,17 @@ const SERVER_ADDR: IpEndpoint = IpEndpoint {
 
 // TODO: consolidate with ersha-core::SensorMetric after
 // resolveing no_std issues.
-#[derive(Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Format)]
 pub enum SensorMetric {
-    /// Soil moisture as a percentage.
-    SoilMoisture { value: u8 },
-    /// Soil temperature in degrees Celsius.
-    SoilTemp { value: f32 },
-    /// Air temperature in degrees Celsius.
-    AirTemp { value: f32 },
-    /// Relative humidity as a percentage.
-    Humidity { value: u8 },
-    /// Rainfall in millimeters.
-    Rainfall { value: f32 },
+    /// Percentage 0-100 (1 byte in Postcard)
+    SoilMoisture(u8),
+    /// Degrees Celsius scaled by 100 (e.g., 25.43 -> 2543).
+    /// Fits in 2 bytes instead of 4.
+    SoilTemp(i16),
+    AirTemp(i16),
+    Humidity(u8),
+    /// Rainfall in mm scaled by 100.
+    Rainfall(u16),
 }
 
 static READING_CHANNEL: Channel<CriticalSectionRawMutex, SensorMetric, SENSOR_PER_DEVICE> =
@@ -96,115 +53,83 @@ pub trait Sensor {
     fn read(&self) -> impl Future<Output = Result<SensorMetric, SensorError>>;
 }
 
+#[derive(Serialize, Deserialize, Debug, Format)]
+pub struct UplinkPacket {
+    pub seq: u8,
+    pub sensor_id: u8,
+    pub metric: SensorMetric,
+}
+
+pub trait LoRaScaling {
+    fn to_fixed(self) -> i16;
+}
+
+impl LoRaScaling for f32 {
+    fn to_fixed(self) -> i16 {
+        (self * 100.0) as i16
+    }
+}
+
+#[derive(Debug)]
 pub enum UplinkError {
-    InvalidAuth,
     UnableToSend,
+    SerializationFailed,
     ServerNotFound,
-}
-
-pub struct Reading {
-    reading_id: u8, // 1 bytes, we will ahve to generate a real id based on the device id and send it to prime
-    metric: u8, // maps to SensorMetric, we could also use fport here. https://github.com/lora-rs/lora-rs/blob/85906f076a54f90d4f8b39aa14fd554df5e434a6/lorawan-device/src/nb_device/mod.rs#L72
-    sensor_id: u8, // relative to the device_id
-    device_id: u32, // 4 bytes, devaddr
-    value: u32,
-    // we still have 1 more byte to make a full 12 bytes.
-}
-
-impl Reading {
-    pub const BYTE_LEN: usize = 11;
-
-    pub fn new(reading_id: u8, metric: u8, sensor_id: u8, device_id: u32, value: u32) -> Self {
-        Self {
-            reading_id,
-            metric,
-            sensor_id,
-            device_id,
-            value,
-        }
-    }
-
-    pub fn to_bytes(&self) -> [u8; Self::BYTE_LEN] {
-        let mut buf = [0u8; Self::BYTE_LEN];
-
-        buf[0] = self.reading_id;
-        buf[1] = self.metric;
-        buf[2] = self.sensor_id;
-
-        buf[3..7].copy_from_slice(&self.device_id.to_le_bytes());
-
-        buf[7..11].copy_from_slice(&self.value.to_le_bytes());
-
-        buf
-    }
 }
 
 pub trait Transport {
     fn ready(&mut self) -> impl Future<Output = Result<(), UplinkError>>;
-    fn send(&mut self, reading: Reading) -> impl Future<Output = Result<usize, UplinkError>>;
-    fn receive(&self, buf: &mut [u8]) -> impl Future<Output = Result<usize, UplinkError>>;
+    fn send(
+        &mut self,
+        fport: u8,
+        data: &[u8],
+    ) -> impl core::future::Future<Output = Result<usize, UplinkError>>;
 }
 
 pub struct Engine<T: Transport> {
     transport: T,
-    device_id: u32,
+    seq: u8,
 }
 
-impl<T> Engine<T>
-where
-    T: Transport,
-{
-    pub fn new(host: T, device_id: u32) -> Self {
-        Self {
-            transport: host,
-            device_id,
-        }
+impl<T: Transport> Engine<T> {
+    pub fn new(transport: T) -> Self {
+        Self { transport, seq: 0 }
     }
 
     pub async fn run(mut self) {
         let receiver = READING_CHANNEL.receiver();
-        let mut reading_id = 0;
-        let _ = self.transport.ready().await;
 
         loop {
-            match receiver.receive().await {
-                SensorMetric::SoilMoisture { value } => {
-                    info!("LoRaWAN Sending: Soil Moisture {}%", value);
-                    let _ = self
-                        .transport
-                        .send(Reading {
-                            value: value as u32,
-                            reading_id,
-                            metric: 0, // SoilMoisture { value: Percentage },
-                            sensor_id: 0x12,
-                            device_id: self.device_id,
-                        })
-                        .await;
+            let metric = receiver.receive().await;
 
-                    reading_id += 1;
-                }
-                SensorMetric::AirTemp { value } => {
-                    info!("LoRaWAN Sending: Air Temp {} C", value);
+            let packet = UplinkPacket {
+                seq: self.seq,
+                sensor_id: 0x01,
+                metric: metric.clone(),
+            };
 
-                    let _ = self
-                        .transport
-                        .send(Reading {
-                            value: value as u32,
-                            reading_id,
-                            metric: 2, // AirTemp { value: NotNan<f64> },
-                            sensor_id: 0x13,
-                            device_id: self.device_id,
-                        })
-                        .await;
+            let mut buffer = [0u8; 64];
 
-                    reading_id += 1;
+            let encoded = match to_slice(&packet, &mut buffer) {
+                Ok(used_slice) => used_slice,
+                Err(_) => {
+                    error!("Serialization Failed");
+                    continue;
                 }
-                _ => {
-                    info!("LoRaWAN Sending: Other metric");
-                    todo!("implement other sensor metrics")
-                }
+            };
+
+            let fport = match metric {
+                SensorMetric::SoilMoisture(_) => 10,
+                SensorMetric::AirTemp(_) => 11,
+                _ => 1,
+            };
+
+            match self.transport.send(fport, encoded).await {
+                Ok(bytes) => info!("Sent {} bytes on FPort {}", bytes, fport),
+                Err(_) => error!("Uplink failed"),
             }
 
+            self.seq = self.seq.wrapping_add(1);
             Timer::after_millis(100).await;
         }
     }
@@ -258,15 +183,11 @@ impl<'a> Transport for Wifi<'a> {
         Ok(())
     }
 
-    async fn send(&mut self, reading: Reading) -> Result<usize, UplinkError> {
+    async fn send(&mut self, _fport: u8, data: &[u8]) -> Result<usize, UplinkError> {
         self.socket
-            .write(&reading.to_bytes())
+            .write(data)
             .await
             .map_err(|_| UplinkError::UnableToSend)
-    }
-
-    async fn receive(&self, _buf: &mut [u8]) -> Result<usize, UplinkError> {
-        Ok(0)
     }
 }
 
@@ -287,7 +208,7 @@ mod tests {
         }
 
         fn read(&self) -> impl core::future::Future<Output = Result<SensorMetric, SensorError>> {
-            async move { Ok(SensorMetric::SoilMoisture { value: 42 }) }
+            async move { Ok(SensorMetric::SoilMoisture(42)) }
         }
     }
 

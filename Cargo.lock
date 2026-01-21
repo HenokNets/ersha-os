@@ -1039,6 +1039,8 @@ dependencies = [
  "embassy-net",
  "embassy-sync",
  "embassy-time",
+ "postcard",
+ "serde",
 ]
 
 [[package]]
