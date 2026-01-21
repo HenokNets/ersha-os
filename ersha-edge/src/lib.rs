@@ -1,6 +1,7 @@
 #![no_std]
 
 use defmt::{Format, error, info};
+use embassy_net::tcp::State;
 use embassy_net::{IpAddress, IpEndpoint, Stack, tcp::TcpSocket};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::{Channel, Sender};
@@ -8,10 +9,10 @@ use embassy_time::{Duration, Timer};
 use postcard::to_slice;
 use serde::{Deserialize, Serialize};
 
-const SENSOR_PER_DEVICE: usize = 8;
+const READING_QUEUE_DEPTH: usize = 16;
 
 const SERVER_ADDR: IpEndpoint = IpEndpoint {
-    addr: IpAddress::v4(192, 168, 8, 1),
+    addr: IpAddress::v4(10, 46, 238, 14),
     port: 9001,
 };
 
@@ -30,10 +31,10 @@ pub enum SensorMetric {
     Rainfall(u16),
 }
 
-static READING_CHANNEL: Channel<CriticalSectionRawMutex, SensorMetric, SENSOR_PER_DEVICE> =
+static READING_CHANNEL: Channel<CriticalSectionRawMutex, SensorMetric, READING_QUEUE_DEPTH> =
     Channel::new();
 
-pub fn sender() -> Sender<'static, CriticalSectionRawMutex, SensorMetric, SENSOR_PER_DEVICE> {
+pub fn sender() -> Sender<'static, CriticalSectionRawMutex, SensorMetric, READING_QUEUE_DEPTH> {
     READING_CHANNEL.sender()
 }
 
@@ -60,17 +61,7 @@ pub struct UplinkPacket {
     pub metric: SensorMetric,
 }
 
-pub trait LoRaScaling {
-    fn to_fixed(self) -> i16;
-}
-
-impl LoRaScaling for f32 {
-    fn to_fixed(self) -> i16 {
-        (self * 100.0) as i16
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Format)]
 pub enum UplinkError {
     UnableToSend,
     SerializationFailed,
@@ -100,12 +91,27 @@ impl<T: Transport> Engine<T> {
         let receiver = READING_CHANNEL.receiver();
 
         loop {
+            loop {
+                if let Err(e) = self.transport.ready().await {
+                    error!("Transport not ready: {:?}", e);
+                    Timer::after_secs(5).await;
+                    continue;
+                }
+                break;
+            }
+
             let metric = receiver.receive().await;
+
+            let fport = match metric {
+                SensorMetric::SoilMoisture(_) => 10,
+                SensorMetric::AirTemp(_) => 11,
+                _ => 1,
+            };
 
             let packet = UplinkPacket {
                 seq: self.seq,
                 sensor_id: 0x01,
-                metric: metric.clone(),
+                metric,
             };
 
             let mut buffer = [0u8; 64];
@@ -116,12 +122,6 @@ impl<T: Transport> Engine<T> {
                     error!("Serialization Failed");
                     continue;
                 }
-            };
-
-            let fport = match metric {
-                SensorMetric::SoilMoisture(_) => 10,
-                SensorMetric::AirTemp(_) => 11,
-                _ => 1,
             };
 
             match self.transport.send(fport, encoded).await {
@@ -147,10 +147,13 @@ macro_rules! sensor_task {
 
                 match sensor.read().await {
                     Ok(reading) => {
-                        sender.send(reading).await;
+                        // sender.send(reading).await;
+                        if sender.try_send(reading).is_err() {
+                            defmt::warn!("Sensor queue full, dropping reading");
+                        }
                     }
                     Err(e) => {
-                        defmt::error!("Sender Error: {:?}", e);
+                        error!("Sender Error: {:?}", e);
                     }
                 }
 
@@ -174,6 +177,10 @@ impl<'a> Wifi<'a> {
 
 impl<'a> Transport for Wifi<'a> {
     async fn ready(&mut self) -> Result<(), UplinkError> {
+        if self.socket.state() == State::Established {
+            return Ok(());
+        }
+
         self.socket.set_timeout(Some(Duration::from_secs(10)));
         self.socket
             .connect(SERVER_ADDR)
@@ -184,10 +191,15 @@ impl<'a> Transport for Wifi<'a> {
     }
 
     async fn send(&mut self, _fport: u8, data: &[u8]) -> Result<usize, UplinkError> {
-        self.socket
-            .write(data)
-            .await
-            .map_err(|_| UplinkError::UnableToSend)
+        let mut written = 0;
+        while written < data.len() {
+            written += self
+                .socket
+                .write(&data[written..])
+                .await
+                .map_err(|_| UplinkError::UnableToSend)?;
+        }
+        Ok(written)
     }
 }
 

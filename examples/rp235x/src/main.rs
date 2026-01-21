@@ -17,10 +17,10 @@ use embassy_time::{Duration, Timer};
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
-use ersha_edge::{Sensor, SensorConfig, SensorError, SensorMetric, sensor_task, Wifi, Engine};
+use ersha_edge::{Engine, Sensor, SensorConfig, SensorError, SensorMetric, Wifi, sensor_task};
 
-const WIFI_NETWORK: &str = "ssid";
-const WIFI_PASSWORD: &str = "password";
+const WIFI_NETWORK: &str = "A";
+const WIFI_PASSWORD: &str = "123r5678i879";
 
 static RX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
 static TX_BUFFER: StaticCell<[u8; 4096]> = StaticCell::new();
@@ -55,7 +55,7 @@ impl Sensor for MockSoilMoistureSensor {
     }
 
     async fn read(&self) -> Result<SensorMetric, SensorError> {
-        Ok(SensorMetric::SoilMoisture { value: 32 })
+        Ok(SensorMetric::SoilMoisture(32))
     }
 }
 
@@ -127,9 +127,10 @@ async fn main(spawner: Spawner) {
     let tx_buffer = TX_BUFFER.init([0; 4096]);
 
     let wifi = Wifi::new(stack, rx_buffer, tx_buffer);
-    let engine = Engine::new(wifi, 0x1337);
+    let engine = Engine::new(wifi);
 
     spawner.spawn(unwrap!(ersha_wifi(engine)));
+    spawner.spawn(unwrap!(soil_moisture(&MockSoilMoistureSensor)));
 
     let delay = Duration::from_millis(250);
     loop {
