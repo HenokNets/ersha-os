@@ -38,6 +38,7 @@
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
           buildInputs = [
+            pkgs.just
             pkgs.bacon
             pkgs.cargo-dist
             pkgs.rust-analyzer
@@ -49,7 +50,7 @@
       formatter = forAllSystems (
         pkgs:
         pkgs.treefmt.withConfig {
-          runtimeInputs = [ pkgs.nixfmt-rfc-style ];
+          runtimeInputs = [ pkgs.nixfmt ];
           settings = {
             on-unmatched = "info";
             formatter.nixfmt = {
