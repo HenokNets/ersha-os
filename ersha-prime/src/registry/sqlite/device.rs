@@ -42,6 +42,7 @@ pub enum SqliteDeviceError {
     NotFound,
 }
 
+#[derive(Clone)]
 pub struct SqliteDeviceRegistry {
     pool: SqlitePool,
 }

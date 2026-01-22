@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use ersha_core::{Dispatcher, DispatcherId, DispatcherState};
@@ -11,8 +11,23 @@ use crate::registry::{
 
 use super::InMemoryError;
 
+#[derive(Clone)]
 pub struct InMemoryDispatcherRegistry {
-    pub dispatchers: RwLock<HashMap<DispatcherId, Dispatcher>>,
+    dispatchers: Arc<RwLock<HashMap<DispatcherId, Dispatcher>>>,
+}
+
+impl InMemoryDispatcherRegistry {
+    pub fn new() -> Self {
+        Self {
+            dispatchers: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+impl Default for InMemoryDispatcherRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[async_trait]
@@ -152,7 +167,6 @@ fn filter_dispatchers<'a>(
 #[cfg(test)]
 mod tests {
     use jiff::Timestamp;
-    use std::collections::HashMap;
     use ulid::Ulid;
 
     use crate::registry::DispatcherRegistry;
@@ -177,9 +191,7 @@ mod tests {
     }
 
     fn dispatcher_registry() -> InMemoryDispatcherRegistry {
-        InMemoryDispatcherRegistry {
-            dispatchers: tokio::sync::RwLock::new(HashMap::new()),
-        }
+        InMemoryDispatcherRegistry::new()
     }
 
     #[tokio::test]

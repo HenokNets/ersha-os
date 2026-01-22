@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use ersha_core::{Device, DeviceId, DeviceState, Sensor};
@@ -11,8 +11,23 @@ use crate::registry::{
 
 use super::InMemoryError;
 
+#[derive(Clone)]
 pub struct InMemoryDeviceRegistry {
-    pub devices: RwLock<HashMap<DeviceId, Device>>,
+    devices: Arc<RwLock<HashMap<DeviceId, Device>>>,
+}
+
+impl InMemoryDeviceRegistry {
+    pub fn new() -> Self {
+        Self {
+            devices: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+
+impl Default for InMemoryDeviceRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[async_trait]
@@ -228,7 +243,6 @@ fn filter_devices<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use ulid::Ulid;
 
     use crate::registry::DeviceRegistry;
@@ -256,9 +270,7 @@ mod tests {
     }
 
     fn device_registry() -> InMemoryDeviceRegistry {
-        InMemoryDeviceRegistry {
-            devices: tokio::sync::RwLock::new(HashMap::new()),
-        }
+        InMemoryDeviceRegistry::new()
     }
 
     #[tokio::test]

@@ -31,7 +31,7 @@ pub struct StoredDeviceStatus {
     pub state: StorageState,
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct MemoryStorage {
     sensor_readings: Arc<RwLock<HashMap<ReadingId, StoredSensorReading>>>,
     device_statuses: Arc<RwLock<HashMap<StatusId, StoredDeviceStatus>>>,

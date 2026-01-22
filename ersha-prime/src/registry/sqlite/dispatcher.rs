@@ -29,6 +29,7 @@ pub enum SqliteDispatcherError {
     NotFound,
 }
 
+#[derive(Clone)]
 pub struct SqliteDispatcherRegistry {
     pool: SqlitePool,
 }

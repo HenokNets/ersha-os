@@ -8,7 +8,7 @@ use std::time::Duration;
 
 /// Storage abstraction for sensor readings.
 #[async_trait]
-pub trait SensorReadingsStorage: Send + Sync + 'static {
+pub trait SensorReadingsStorage: Clone + Send + Sync + 'static {
     /// Error type specific to this storage implementation
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -27,7 +27,7 @@ pub trait SensorReadingsStorage: Send + Sync + 'static {
 
 /// Storage abstraction for device status events.
 #[async_trait]
-pub trait DeviceStatusStorage: Send + Sync + 'static {
+pub trait DeviceStatusStorage: Clone + Send + Sync + 'static {
     /// Error type specific to this storage implementation
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -46,7 +46,7 @@ pub trait DeviceStatusStorage: Send + Sync + 'static {
 
 /// Storage abstraction for maintenance operations.
 #[async_trait]
-pub trait StorageMaintenance: Send + Sync + 'static {
+pub trait StorageMaintenance: Clone + Send + Sync + 'static {
     /// Error type specific to this storage implementation
     type Error: std::error::Error + Send + Sync + 'static;
 

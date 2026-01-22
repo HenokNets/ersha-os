@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 pub mod filter;
 pub mod memory;
 pub mod sqlite;
@@ -8,7 +7,7 @@ use ersha_core::{Device, DeviceId, Dispatcher, DispatcherId, Sensor};
 use filter::{DeviceFilter, DeviceSortBy, DispatcherFilter, DispatcherSortBy, QueryOptions};
 
 #[async_trait]
-trait DeviceRegistry: Send + Sync + 'static {
+pub trait DeviceRegistry: Clone + Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn register(&self, device: Device) -> Result<(), Self::Error>;
@@ -31,7 +30,7 @@ trait DeviceRegistry: Send + Sync + 'static {
 }
 
 #[async_trait]
-trait DispatcherRegistry: Send + Sync + 'static {
+pub trait DispatcherRegistry: Clone + Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync + 'static;
 
     async fn register(&self, dispatcher: Dispatcher) -> Result<(), Self::Error>;

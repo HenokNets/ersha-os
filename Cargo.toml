@@ -39,8 +39,31 @@ features = ["sqlite", "runtime-tokio", "macros", "migrate"]
 [workspace.dependencies.thiserror]
 version = "2.0.18"
 
+[workspace.dependencies.clap]
+version = "4"
+features = ["derive"]
+
+[workspace.dependencies.color-eyre]
+version = "0.6"
+
+[workspace.dependencies.toml]
+version = "0.8"
+
 [workspace.dependencies.async-trait]
 version = "0.1"
+
+[workspace.dependencies.axum]
+version = "0.8"
+
+[workspace.dependencies.tokio-util]
+version = "0.7"
+
+[workspace.dependencies.tracing]
+version = "0.1"
+
+[workspace.dependencies.tracing-subscriber]
+version = "0.3"
+features = ["env-filter"]
 
 [profile.dist]
 lto = "thin"

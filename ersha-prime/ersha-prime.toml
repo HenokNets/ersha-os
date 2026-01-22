@@ -1,0 +1,11 @@
+[server]
+rpc_addr = "0.0.0.0:9000"
+http_addr = "0.0.0.0:8080"
+
+[registry]
+type = "memory"
+
+# To use SQLite instead:
+# [registry]
+# type = "sqlite"
+# path = "ersha-prime.db"
