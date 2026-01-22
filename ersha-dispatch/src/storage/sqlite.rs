@@ -17,47 +17,18 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SqliteStorageError {
-    #[error("Connection failed: {0}")]
-    ConnectionFailed(String),
-    #[error("Schema creation failed: {0}")]
-    SchemaCreationFailed(String),
-    #[error("Serialization failed: {0}")]
-    SerializationFailed(String),
-    #[error("Deserialization failed: {0}")]
-    DeserializationFailed(String),
-    #[error("Query failed: {0}")]
-    QueryFailed(String),
-    #[error("Transaction failed: {0}")]
-    TransactionFailed(String),
-    #[error("Update failed: {0}")]
-    UpdateFailed(String),
-    #[error("Row processing failed: {0}")]
-    RowProcessingFailed(String),
-    #[error("Time conversion failed: {0}")]
-    TimeConversionFailed(String),
-    #[error("Pool error: {0}")]
-    PoolError(String),
-}
-
-impl From<SqlxError> for SqliteStorageError {
-    fn from(err: SqlxError) -> Self {
-        SqliteStorageError::QueryFailed(err.to_string())
-    }
-}
-
-impl From<serde_json::Error> for SqliteStorageError {
-    fn from(err: serde_json::Error) -> Self {
-        SqliteStorageError::SerializationFailed(err.to_string())
-    }
+    #[error("sqlx error: {0}")]
+    Sqlx(#[from] SqlxError),
+    #[error("serde json error: {0}")]
+    SerdeJson(#[from] serde_json::Error),
+    #[error("migration error: {0}")]
+    Migrate(#[from] sqlx::migrate::MigrateError),
 }
 
 impl SqliteStorage {
-    /// create new SQLite storage with automatic migrations
     pub async fn new<P: AsRef<Path>>(path: P) -> Result<Self, SqliteStorageError> {
         let database_url = format!("sqlite:{}", path.as_ref().display());
-        let pool = SqlitePool::connect(&database_url).await.map_err(|e| {
-            SqliteStorageError::ConnectionFailed(format!("Failed to connect to SQLite DB: {}", e))
-        })?;
+        let pool = SqlitePool::connect(&database_url).await?;
 
         // enable WAL for better concurrency
         sqlx::query("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
@@ -73,14 +44,11 @@ impl SqliteStorage {
         Ok(Self { pool })
     }
 
-    /// run database migrations
     async fn run_migrations(pool: &SqlitePool) -> Result<(), SqliteStorageError> {
-        sqlx::migrate!("./migrations").run(pool).await.map_err(|e| {
-            SqliteStorageError::SchemaCreationFailed(format!("Migration failed: {}", e))
-        })
+        sqlx::migrate!("./migrations").run(pool).await?;
+        Ok(())
     }
 
-    /// ensure all necessary indexes exist
     async fn ensure_indexes(pool: &SqlitePool) -> Result<(), SqliteStorageError> {
         sqlx::query(
             r#"
@@ -101,10 +69,7 @@ impl SqliteStorage {
     pub async fn get_version(&self) -> Result<i64, SqliteStorageError> {
         let row: Option<(i64,)> = sqlx::query_as("SELECT MAX(version) FROM _sqlx_migrations")
             .fetch_optional(&self.pool)
-            .await
-            .map_err(|e| {
-                SqliteStorageError::QueryFailed(format!("Failed to get version: {}", e))
-            })?;
+            .await?;
 
         Ok(row.map(|(v,)| v).unwrap_or(0))
     }
@@ -114,20 +79,20 @@ impl SqliteStorage {
         Ok(version >= 1) // version 1 is our current schema
     }
 
-    fn serialize_reading(reading: &SensorReading) -> Result<String, serde_json::Error> {
-        serde_json::to_string(reading)
+    fn serialize_reading(reading: &SensorReading) -> Result<String, SqliteStorageError> {
+        Ok(serde_json::to_string(reading)?)
     }
 
-    fn deserialize_reading(json: &str) -> Result<SensorReading, serde_json::Error> {
-        serde_json::from_str(json)
+    fn deserialize_reading(json: &str) -> Result<SensorReading, SqliteStorageError> {
+        Ok(serde_json::from_str(json)?)
     }
 
-    fn serialize_status(status: &DeviceStatus) -> Result<String, serde_json::Error> {
-        serde_json::to_string(status)
+    fn serialize_status(status: &DeviceStatus) -> Result<String, SqliteStorageError> {
+        Ok(serde_json::to_string(status)?)
     }
 
-    fn deserialize_status(json: &str) -> Result<DeviceStatus, serde_json::Error> {
-        serde_json::from_str(json)
+    fn deserialize_status(json: &str) -> Result<DeviceStatus, SqliteStorageError> {
+        Ok(serde_json::from_str(json)?)
     }
 }
 
@@ -155,9 +120,7 @@ impl SensorReadingsStorage for SqliteStorage {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
-        })?;
+        let mut tx = self.pool.begin().await?;
 
         for reading in readings {
             let json = Self::serialize_reading(&reading)?;
@@ -169,13 +132,10 @@ impl SensorReadingsStorage for SqliteStorage {
             .bind(&id_str)
             .bind(&json)
             .execute(&mut *tx)
-            .await
-            .map_err(|e| SqliteStorageError::QueryFailed(format!("Insert failed: {}", e)))?;
+            .await?;
         }
 
-        tx.commit()
-            .await
-            .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -187,9 +147,7 @@ impl SensorReadingsStorage for SqliteStorage {
 
         let mut readings = Vec::new();
         for row in rows {
-            let json: String = row.try_get("reading_json").map_err(|e| {
-                SqliteStorageError::RowProcessingFailed(format!("Failed to get column: {}", e))
-            })?;
+            let json: String = row.try_get("reading_json")?;
             let reading = Self::deserialize_reading(&json)?;
             readings.push(reading);
         }
@@ -202,9 +160,7 @@ impl SensorReadingsStorage for SqliteStorage {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
-        })?;
+        let mut tx = self.pool.begin().await?;
 
         for id in ids {
             let id_str = id.0.to_string();
@@ -214,13 +170,10 @@ impl SensorReadingsStorage for SqliteStorage {
             )
                 .bind(&id_str)
                 .execute(&mut *tx)
-                .await
-                .map_err(|e| SqliteStorageError::UpdateFailed(format!("Update failed for {}: {}", id_str, e)))?;
+                .await?;
         }
 
-        tx.commit()
-            .await
-            .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -250,9 +203,7 @@ impl DeviceStatusStorage for SqliteStorage {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
-        })?;
+        let mut tx = self.pool.begin().await?;
 
         for status in statuses {
             let json = Self::serialize_status(&status)?;
@@ -264,13 +215,10 @@ impl DeviceStatusStorage for SqliteStorage {
             .bind(&id_str)
             .bind(&json)
             .execute(&mut *tx)
-            .await
-            .map_err(|e| SqliteStorageError::QueryFailed(format!("Insert failed: {}", e)))?;
+            .await?;
         }
 
-        tx.commit()
-            .await
-            .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -282,9 +230,7 @@ impl DeviceStatusStorage for SqliteStorage {
 
         let mut statuses = Vec::new();
         for row in rows {
-            let json: String = row.try_get("status_json").map_err(|e| {
-                SqliteStorageError::RowProcessingFailed(format!("Failed to get column: {}", e))
-            })?;
+            let json: String = row.try_get("status_json")?;
             let status = Self::deserialize_status(&json)?;
             statuses.push(status);
         }
@@ -297,9 +243,7 @@ impl DeviceStatusStorage for SqliteStorage {
             return Ok(());
         }
 
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
-        })?;
+        let mut tx = self.pool.begin().await?;
 
         for id in ids {
             let id_str = id.0.to_string();
@@ -309,13 +253,10 @@ impl DeviceStatusStorage for SqliteStorage {
             )
                 .bind(&id_str)
                 .execute(&mut *tx)
-                .await
-                .map_err(|e| SqliteStorageError::UpdateFailed(format!("Update failed for {}: {}", id_str, e)))?;
+                .await?;
         }
 
-        tx.commit()
-            .await
-            .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -362,9 +303,7 @@ impl StorageMaintenance for SqliteStorage {
 
     async fn cleanup_uploaded(&self, older_than: Duration) -> Result<CleanupStats, Self::Error> {
         if older_than == Duration::ZERO {
-            let mut tx = self.pool.begin().await.map_err(|e| {
-                SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
-            })?;
+            let mut tx = self.pool.begin().await?;
 
             let sensor_deleted =
                 sqlx::query("DELETE FROM sensor_readings WHERE state = 'uploaded'")
@@ -378,9 +317,7 @@ impl StorageMaintenance for SqliteStorage {
                     .await?
                     .rows_affected();
 
-            tx.commit().await.map_err(|e| {
-                SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e))
-            })?;
+            tx.commit().await?;
 
             return Ok(CleanupStats {
                 sensor_readings_deleted: sensor_deleted as usize,
@@ -390,9 +327,7 @@ impl StorageMaintenance for SqliteStorage {
 
         let cutoff_days = older_than.as_secs_f64() / 86400.0;
 
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            SqliteStorageError::TransactionFailed(format!("Failed to begin transaction: {}", e))
-        })?;
+        let mut tx = self.pool.begin().await?;
 
         let sensor_deleted = sqlx::query(
             "DELETE FROM sensor_readings WHERE state = 'uploaded' AND uploaded_at IS NOT NULL AND julianday('now') - julianday(uploaded_at) >= ?",
@@ -410,9 +345,7 @@ impl StorageMaintenance for SqliteStorage {
             .await?
             .rows_affected();
 
-        tx.commit()
-            .await
-            .map_err(|e| SqliteStorageError::TransactionFailed(format!("Commit failed: {}", e)))?;
+        tx.commit().await?;
 
         Ok(CleanupStats {
             sensor_readings_deleted: sensor_deleted as usize,
