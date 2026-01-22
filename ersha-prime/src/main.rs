@@ -14,7 +14,6 @@ use ersha_rpc::Server;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[derive(Parser)]
 #[command(name = "ersha-prime")]
@@ -33,9 +32,11 @@ struct AppState<R: DispatcherRegistry> {
 async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
+    let filter =
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "tracing=info,ersha_prime=info".to_owned());
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
         .init();
 
     let cli = Cli::parse();

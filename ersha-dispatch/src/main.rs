@@ -13,7 +13,6 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use ulid::Ulid;
 
 #[derive(Parser)]
@@ -29,9 +28,11 @@ struct Cli {
 async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
+    let filter =
+        std::env::var("RUST_LOG").unwrap_or_else(|_| "tracing=info,ersha_dispatch=info".to_owned());
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
         .init();
 
     let cli = Cli::parse();

@@ -5,8 +5,10 @@ use tracing::{error, info};
 
 #[tokio::main]
 async fn main() {
+    let filter = std::env::var("RUST_LOG")
+        .unwrap_or_else(|_| "tracing=info,client=info,ersha_rpc=debug".to_owned());
     tracing_subscriber::fmt()
-        .with_env_filter("tracing=info,client=info,ersha_rpc=debug")
+        .with_env_filter(filter)
         .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
         .init();
 
