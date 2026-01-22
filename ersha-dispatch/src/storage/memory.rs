@@ -1,9 +1,11 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use ersha_core::{DeviceStatus, ReadingId, SensorReading, StatusId};
+use thiserror::Error;
+use tokio::sync::RwLock;
 
 use crate::storage::{
     CleanupStats, DeviceStatusStorage, SensorReadingsStorage, StorageMaintenance, StorageStats,
@@ -29,36 +31,21 @@ pub struct StoredDeviceStatus {
     pub state: StorageState,
 }
 
-/// In-memory storage implementation.
-/// This is primarily intended for testing and as a reference
-/// implementation of the Storage trait.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct MemoryStorage {
-    sensor_readings: Arc<Mutex<HashMap<ReadingId, StoredSensorReading>>>,
-    device_statuses: Arc<Mutex<HashMap<StatusId, StoredDeviceStatus>>>,
+    sensor_readings: Arc<RwLock<HashMap<ReadingId, StoredSensorReading>>>,
+    device_statuses: Arc<RwLock<HashMap<StatusId, StoredDeviceStatus>>>,
 }
 
-use thiserror::Error;
-
-/// Error type for MemoryStorage
 #[derive(Debug, Error)]
-pub enum MemoryStorageError {
-    #[error("Mutex poisoned: {0}")]
-    MutexPoisoned(String),
-}
-
-impl<T> From<PoisonError<T>> for MemoryStorageError {
-    fn from(err: PoisonError<T>) -> Self {
-        MemoryStorageError::MutexPoisoned(err.to_string())
-    }
-}
+pub enum MemoryStorageError {}
 
 #[async_trait]
 impl SensorReadingsStorage for MemoryStorage {
     type Error = MemoryStorageError;
 
     async fn store(&self, reading: SensorReading) -> Result<(), Self::Error> {
-        let mut map = self.sensor_readings.lock()?;
+        let mut map = self.sensor_readings.write().await;
 
         let id = reading.id;
         map.insert(
@@ -74,7 +61,7 @@ impl SensorReadingsStorage for MemoryStorage {
     }
 
     async fn store_batch(&self, readings: Vec<SensorReading>) -> Result<(), Self::Error> {
-        let mut map = self.sensor_readings.lock()?;
+        let mut map = self.sensor_readings.write().await;
 
         for reading in readings {
             let id = reading.id;
@@ -92,7 +79,7 @@ impl SensorReadingsStorage for MemoryStorage {
     }
 
     async fn fetch_pending(&self) -> Result<Vec<SensorReading>, Self::Error> {
-        let map = self.sensor_readings.lock()?;
+        let map = self.sensor_readings.read().await;
 
         Ok(map
             .values()
@@ -102,7 +89,7 @@ impl SensorReadingsStorage for MemoryStorage {
     }
 
     async fn mark_uploaded(&self, ids: &[ReadingId]) -> Result<(), Self::Error> {
-        let mut map = self.sensor_readings.lock()?;
+        let mut map = self.sensor_readings.write().await;
 
         for id in ids {
             if let Some(entry) = map.get_mut(id) {
@@ -119,7 +106,7 @@ impl DeviceStatusStorage for MemoryStorage {
     type Error = MemoryStorageError;
 
     async fn store(&self, status: DeviceStatus) -> Result<(), Self::Error> {
-        let mut map = self.device_statuses.lock()?;
+        let mut map = self.device_statuses.write().await;
 
         let id = status.id;
         map.insert(
@@ -135,7 +122,7 @@ impl DeviceStatusStorage for MemoryStorage {
     }
 
     async fn store_batch(&self, statuses: Vec<DeviceStatus>) -> Result<(), Self::Error> {
-        let mut map = self.device_statuses.lock()?;
+        let mut map = self.device_statuses.write().await;
 
         for status in statuses {
             let id = status.id;
@@ -153,7 +140,7 @@ impl DeviceStatusStorage for MemoryStorage {
     }
 
     async fn fetch_pending(&self) -> Result<Vec<DeviceStatus>, Self::Error> {
-        let map = self.device_statuses.lock()?;
+        let map = self.device_statuses.read().await;
 
         Ok(map
             .values()
@@ -163,7 +150,7 @@ impl DeviceStatusStorage for MemoryStorage {
     }
 
     async fn mark_uploaded(&self, ids: &[StatusId]) -> Result<(), Self::Error> {
-        let mut map = self.device_statuses.lock()?;
+        let mut map = self.device_statuses.write().await;
 
         for id in ids {
             if let Some(entry) = map.get_mut(id) {
@@ -180,8 +167,8 @@ impl StorageMaintenance for MemoryStorage {
     type Error = MemoryStorageError;
 
     async fn get_stats(&self) -> Result<StorageStats, Self::Error> {
-        let sensor_map = self.sensor_readings.lock()?;
-        let device_map = self.device_statuses.lock()?;
+        let sensor_map = self.sensor_readings.read().await;
+        let device_map = self.device_statuses.read().await;
 
         let sensor_readings_total = sensor_map.len();
         let sensor_readings_pending = sensor_map
@@ -208,8 +195,8 @@ impl StorageMaintenance for MemoryStorage {
     }
 
     async fn cleanup_uploaded(&self, _older_than: Duration) -> Result<CleanupStats, Self::Error> {
-        let mut sensor_map = self.sensor_readings.lock()?;
-        let mut device_map = self.device_statuses.lock()?;
+        let mut sensor_map = self.sensor_readings.write().await;
+        let mut device_map = self.device_statuses.write().await;
 
         // Memory storage: just remove uploaded entries (ignore timestamp)
         let sensor_keys_to_remove: Vec<_> = sensor_map
