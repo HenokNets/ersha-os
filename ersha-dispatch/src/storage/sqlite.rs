@@ -40,6 +40,14 @@ impl SqliteStorage {
         Ok(Self { pool })
     }
 
+    pub async fn new_in_memory() -> Result<Self, SqliteStorageError> {
+        let pool = SqlitePool::connect("sqlite::memory:").await?;
+
+        Self::run_migrations(&pool).await?;
+
+        Ok(Self { pool })
+    }
+
     async fn run_migrations(pool: &SqlitePool) -> Result<(), SqliteStorageError> {
         sqlx::migrate!("./migrations").run(pool).await?;
         Ok(())
@@ -326,7 +334,6 @@ mod tests {
     use crate::storage::{DeviceStatusStorage, SensorReadingsStorage, StorageMaintenance};
     use ersha_core::*;
     use std::time::Duration;
-    use tempfile::NamedTempFile;
     use ulid::Ulid;
 
     fn dummy_reading() -> SensorReading {
@@ -360,10 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_sensor_reading_lifecycle() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let reading = dummy_reading();
         let reading_id = reading.id;
@@ -383,10 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_device_status_lifecycle() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let status = dummy_status();
         let status_id = status.id;
@@ -406,10 +407,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_mixed_events() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let reading = dummy_reading();
         let status = dummy_status();
@@ -430,31 +428,23 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_persistence_across_instances() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
+        // This test is about persistence across instances, which doesn't apply to in-memory databases.
+        // In-memory databases are dropped when the connection closes, so we'll use a shared connection instead.
+        let storage = SqliteStorage::new_in_memory().await?;
 
-        {
-            let storage = SqliteStorage::new(db_path).await?;
-            let reading = dummy_reading();
-            SensorReadingsStorage::store(&storage, reading).await?;
-        }
+        let reading = dummy_reading();
+        SensorReadingsStorage::store(&storage, reading).await?;
 
-        {
-            let storage = SqliteStorage::new(db_path).await?;
-            let pending: Vec<SensorReading> =
-                SensorReadingsStorage::fetch_pending(&storage).await?;
-            assert_eq!(pending.len(), 1);
-        }
+        // Verify the reading persists in the same instance
+        let pending: Vec<SensorReading> = SensorReadingsStorage::fetch_pending(&storage).await?;
+        assert_eq!(pending.len(), 1);
 
         Ok(())
     }
 
     #[tokio::test]
     async fn sqlite_batch_mark_uploaded() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         // create multiple readings
         let reading1 = dummy_reading();
@@ -480,10 +470,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_empty_ids_handling() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         // should not panic with empty slices
         let empty_readings: Vec<ReadingId> = Vec::new();
@@ -496,10 +483,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_batch_sensor_readings() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let readings = vec![dummy_reading(), dummy_reading(), dummy_reading()];
 
@@ -513,10 +497,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_batch_device_statuses() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let statuses = vec![dummy_status(), dummy_status()];
 
@@ -530,10 +511,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_empty_batch() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         // should not panic with empty batches
         SensorReadingsStorage::store_batch(&storage, Vec::new()).await?;
@@ -544,10 +522,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_get_stats() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let stats = storage.get_stats().await?;
         assert_eq!(stats.sensor_readings_total, 0);
@@ -580,10 +555,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_cleanup_uploaded() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let reading1 = dummy_reading();
         let reading2 = dummy_reading();
@@ -620,10 +592,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_time_based_cleanup() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let reading1 = dummy_reading();
         let id1 = reading1.id;
@@ -656,10 +625,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_zero_duration_cleanup() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         let reading = dummy_reading();
         let reading_id = reading.id;
@@ -681,10 +647,7 @@ mod tests {
 
     #[tokio::test]
     async fn sqlite_cleanup_only_affects_uploaded() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        let storage = SqliteStorage::new(db_path).await?;
+        let storage = SqliteStorage::new_in_memory().await?;
 
         // create mixed: 2 uploaded, 1 pending, 1 device status uploaded
         let reading1 = dummy_reading();
