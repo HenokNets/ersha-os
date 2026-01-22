@@ -35,11 +35,7 @@ impl SqliteStorage {
             .execute(&pool)
             .await?;
 
-        // run migrations first
         Self::run_migrations(&pool).await?;
-
-        // ensure all indexes exist
-        Self::ensure_indexes(&pool).await?;
 
         Ok(Self { pool })
     }
@@ -47,36 +43,6 @@ impl SqliteStorage {
     async fn run_migrations(pool: &SqlitePool) -> Result<(), SqliteStorageError> {
         sqlx::migrate!("./migrations").run(pool).await?;
         Ok(())
-    }
-
-    async fn ensure_indexes(pool: &SqlitePool) -> Result<(), SqliteStorageError> {
-        sqlx::query(
-            r#"
-            -- Ensure all indexes exist (idempotent)
-            CREATE INDEX IF NOT EXISTS idx_sensor_readings_state ON sensor_readings(state);
-            CREATE INDEX IF NOT EXISTS idx_device_statuses_state ON device_statuses(state);
-            CREATE INDEX IF NOT EXISTS idx_sensor_readings_uploaded_at ON sensor_readings(uploaded_at);
-            CREATE INDEX IF NOT EXISTS idx_device_statuses_uploaded_at ON device_statuses(uploaded_at);
-            CREATE INDEX IF NOT EXISTS idx_sensor_readings_created_at ON sensor_readings(created_at);
-            CREATE INDEX IF NOT EXISTS idx_device_statuses_created_at ON device_statuses(created_at);
-            "#,
-        )
-            .execute(pool)
-        .await?;
-        Ok(())
-    }
-
-    pub async fn get_version(&self) -> Result<i64, SqliteStorageError> {
-        let row: Option<(i64,)> = sqlx::query_as("SELECT MAX(version) FROM _sqlx_migrations")
-            .fetch_optional(&self.pool)
-            .await?;
-
-        Ok(row.map(|(v,)| v).unwrap_or(0))
-    }
-
-    pub async fn check_schema(&self) -> Result<bool, SqliteStorageError> {
-        let version = self.get_version().await?;
-        Ok(version >= 1) // version 1 is our current schema
     }
 
     fn serialize_reading(reading: &SensorReading) -> Result<String, SqliteStorageError> {
@@ -750,73 +716,6 @@ mod tests {
         assert_eq!(stats.device_statuses_total, 0);
         assert_eq!(stats.device_statuses_pending, 0);
         assert_eq!(stats.device_statuses_uploaded, 0);
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn sqlite_migration_system() -> Result<(), SqliteStorageError> {
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-
-        // test 1: Fresh database should be at version 1
-        let storage = SqliteStorage::new(db_path).await?;
-        let version = storage.get_version().await?;
-        assert_eq!(
-            version, 20240101000000,
-            "Fresh database should be at version 1"
-        );
-
-        // test 2: Schema should be up to date
-        let schema_ok = storage.check_schema().await?;
-        assert!(schema_ok, "Schema should be up to date");
-
-        // test 3: Can store and retrieve data
-        let reading = dummy_reading();
-        let reading_id = reading.id;
-
-        SensorReadingsStorage::store(&storage, reading).await?;
-
-        let pending: Vec<SensorReading> = SensorReadingsStorage::fetch_pending(&storage).await?;
-        assert_eq!(pending.len(), 1);
-
-        SensorReadingsStorage::mark_uploaded(&storage, std::slice::from_ref(&reading_id)).await?;
-
-        let pending: Vec<SensorReading> = SensorReadingsStorage::fetch_pending(&storage).await?;
-        assert_eq!(pending.len(), 0);
-
-        // test 4: Verify uploaded_at column works
-        let stats = storage.get_stats().await?;
-        assert_eq!(stats.sensor_readings_uploaded, 1);
-
-        // test 5: Cleanup should work
-        let cleanup = storage.cleanup_uploaded(Duration::ZERO).await?;
-        assert_eq!(cleanup.sensor_readings_deleted, 1);
-
-        println!("✅ Migration system works perfectly!");
-        println!("   - Version tracking: v{}", version);
-        println!("   - Schema validation: {}", schema_ok);
-        println!("   - Full CRUD operations: ✓");
-        println!("   - Upload tracking with timestamps: ✓");
-        println!("   - Data cleanup: ✓");
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn sqlite_migration_idempotent() -> Result<(), SqliteStorageError> {
-        // test that migrations can run multiple times without error
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path();
-        let storage1 = SqliteStorage::new(db_path).await?;
-        let version1 = storage1.get_version().await?;
-        let storage2 = SqliteStorage::new(db_path).await?;
-        let version2 = storage2.get_version().await?;
-
-        assert_eq!(version1, version2, "Versions should be consistent");
-        assert_eq!(version1, 20240101000000);
-
-        println!("✅ Migrations are idempotent (safe to run multiple times)");
 
         Ok(())
     }
