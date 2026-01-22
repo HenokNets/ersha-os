@@ -754,12 +754,23 @@ name = "ersha-dispatch"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
+ "clap",
+ "color-eyre",
  "ersha-core",
+ "ersha-rpc",
  "jiff",
+ "ordered-float",
+ "rand 0.9.2",
+ "serde",
  "serde_json",
  "sqlx",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
+ "toml 0.8.23",
+ "tracing",
+ "tracing-subscriber",
  "ulid",
 ]
 

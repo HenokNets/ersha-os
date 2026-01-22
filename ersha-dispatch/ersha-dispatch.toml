@@ -1,0 +1,19 @@
+[dispatcher]
+id = "01JJNQ1KQCNZ8X9PQRV5ABCD12"
+location = 0x8a2a1072b59ffff
+
+[server]
+http_addr = "0.0.0.0:8081"
+
+[storage]
+type = "memory"
+
+[prime]
+rpc_addr = "127.0.0.1:9000"
+upload_interval_secs = 60
+
+[edge]
+type = "mock"
+reading_interval_secs = 5
+status_interval_secs = 30
+device_count = 3

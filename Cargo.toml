@@ -65,6 +65,9 @@ version = "0.1"
 version = "0.3"
 features = ["env-filter"]
 
+[workspace.dependencies.rand]
+version = "0.9"
+
 [profile.dist]
 lto = "thin"
 inherits = "release"
