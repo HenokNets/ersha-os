@@ -15,21 +15,6 @@ pub type DeviceId = u32;
 pub type SensorId = u8;
 pub type ReadingId = u16;
 
-#[derive(Serialize, Deserialize, Format, Clone, Copy)]
-pub struct SensorCapability {
-    pub sensor_id: SensorId,
-    pub metric: SensorMetricKind,
-}
-
-#[derive(Serialize, Deserialize, Format, Clone, Copy)]
-pub enum SensorMetricKind {
-    SoilMoisture,
-    SoilTemp,
-    AirTemp,
-    Humidity,
-    Rainfall,
-}
-
 #[derive(Serialize, Deserialize, Format)]
 pub struct ReadingPacket {
     pub device_id: DeviceId,
@@ -41,13 +26,6 @@ pub struct ReadingPacket {
 #[derive(Clone, Format)]
 pub struct TaggedReading {
     pub sensor_id: SensorId,
-    pub metric: SensorMetric,
-}
-
-#[derive(Serialize, Deserialize, Debug, Format)]
-pub struct UplinkPacket {
-    pub seq: u8,
-    pub sensor_id: u8,
     pub metric: SensorMetric,
 }
 
@@ -117,7 +95,7 @@ mod tests {
         }
     }
 
-    sensor_task!(soil_task, MockSoilSensor, SensorMetricKind::SoilMoisture);
+    sensor_task!(soil_task, MockSoilSensor);
 
     struct MockAirSensor;
 
@@ -133,7 +111,7 @@ mod tests {
         }
     }
 
-    sensor_task!(air_task, MockAirSensor, SensorMetricKind::SoilMoisture);
+    sensor_task!(air_task, MockAirSensor);
 
     struct MockRainSensor;
 
@@ -149,5 +127,5 @@ mod tests {
         }
     }
 
-    sensor_task!(rain_task, MockRainSensor, SensorMetricKind::SoilMoisture);
+    sensor_task!(rain_task, MockRainSensor);
 }
