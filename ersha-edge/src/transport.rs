@@ -70,12 +70,12 @@ impl<'a> Transport for Wifi<'a> {
             .await
             .map_err(|_| Error::UnableToSend)?;
 
-        let mut buf = [0u8; 4];
+        let mut buf = [0u8; 16];
         read_exact(&mut self.socket, &mut buf)
             .await
             .map_err(|_| Error::UnableToSend)?;
 
-        let id = u32::from_be_bytes(buf);
+        let id = u128::from_be_bytes(buf);
         self.device_id = Some(id);
         Ok(id)
     }

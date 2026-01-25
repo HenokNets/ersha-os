@@ -11,7 +11,7 @@ pub use transport::Transport;
 use defmt::Format;
 use serde::{Deserialize, Serialize};
 
-pub type DeviceId = u32;
+pub type DeviceId = u128;
 pub type SensorId = u8;
 pub type ReadingId = u16;
 
