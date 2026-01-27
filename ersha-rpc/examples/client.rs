@@ -1,4 +1,4 @@
-use ersha_core::{DispatcherId, H3Cell, HelloRequest};
+use ersha_core::{DispatcherId, H3Cell, HelloRequest, HelloResponse};
 use ersha_rpc::Client;
 use tokio::net::TcpStream;
 use tracing::{error, info};
@@ -47,11 +47,15 @@ async fn main() {
     };
 
     match client.hello(hello_request).await {
-        Ok(response) => {
+        Ok(HelloResponse::Accepted { dispatcher_id }) => {
             info!(
                 "hello response received: dispatcher_id = {:?}",
-                response.dispatcher_id
+                dispatcher_id
             );
+        }
+        Ok(HelloResponse::Rejected { reason }) => {
+            error!("hello request rejected: {:?}", reason);
+            std::process::exit(1);
         }
         Err(e) => {
             error!("hello request failed: {}", e);

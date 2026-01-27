@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use axum::{Router, routing::get};
 use clap::Parser;
-use ersha_core::{BatchId, BatchUploadRequest, DispatcherId, H3Cell, HelloRequest};
+use ersha_core::{BatchId, BatchUploadRequest, DispatcherId, H3Cell, HelloRequest, HelloResponse};
 use ersha_dispatch::edge::tcp::TcpEdgeReceiver;
 use ersha_dispatch::{
     Config, DeviceStatusStorage, EdgeConfig, EdgeData, EdgeReceiver, MemoryStorage,
@@ -356,9 +356,16 @@ async fn connect_and_register(
     };
 
     let resp = client.hello(hello).await?;
-    info!(dispatcher_id = ?resp.dispatcher_id, "Registered with ersha-prime");
-
-    Ok(client)
+    match resp {
+        HelloResponse::Accepted { dispatcher_id } => {
+            info!(dispatcher_id = ?dispatcher_id, "Registered with ersha-prime");
+            Ok(client)
+        }
+        HelloResponse::Rejected { reason } => Err(color_eyre::eyre::eyre!(
+            "Connection rejected by ersha-prime: {:?}",
+            reason
+        )),
+    }
 }
 
 async fn health_handler() -> &'static str {

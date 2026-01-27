@@ -102,10 +102,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_roundtrip_hello_response() {
+    async fn test_roundtrip_hello_response_accepted() {
         let (mut writer, mut reader) = duplex(1024);
-        let response = HelloResponse {
+        let response = HelloResponse::Accepted {
             dispatcher_id: DispatcherId(ulid::Ulid::new()),
+        };
+        let original = create_envelope(WireMessage::HelloResponse(response.clone()));
+
+        write_frame(&mut writer, &original).await.unwrap();
+        let read = read_frame(&mut reader).await.unwrap();
+
+        assert_eq!(read, original);
+    }
+
+    #[tokio::test]
+    async fn test_roundtrip_hello_response_rejected() {
+        let (mut writer, mut reader) = duplex(1024);
+        let response = HelloResponse::Rejected {
+            reason: ersha_core::HelloRejectionReason::UnknownDispatcher,
         };
         let original = create_envelope(WireMessage::HelloResponse(response.clone()));
 

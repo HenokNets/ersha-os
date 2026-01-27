@@ -1,4 +1,8 @@
-use ersha_core::{BatchUploadRequest, BatchUploadResponse, HelloRequest, HelloResponse};
+use ersha_core::{
+    AlertRequest, AlertResponse, BatchUploadRequest, BatchUploadResponse,
+    DeviceDisconnectionRequest, DeviceDisconnectionResponse, DispatcherStatusRequest,
+    DispatcherStatusResponse, HelloRequest, HelloResponse,
+};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::net::TcpStream;
@@ -73,6 +77,54 @@ impl Client {
 
         match response.payload {
             WireMessage::BatchUploadResponse(resp) => Ok(resp),
+            WireMessage::Error(err) => Err(ClientError::ErrorResponse(err)),
+            _ => Err(ClientError::UnexpectedResponse),
+        }
+    }
+
+    pub async fn alert(&self, request: AlertRequest) -> Result<AlertResponse, ClientError> {
+        let response = self
+            .rpc
+            .call(WireMessage::AlertRequest(request), self.timeout)
+            .await?;
+
+        match response.payload {
+            WireMessage::AlertResponse(resp) => Ok(resp),
+            WireMessage::Error(err) => Err(ClientError::ErrorResponse(err)),
+            _ => Err(ClientError::UnexpectedResponse),
+        }
+    }
+
+    pub async fn dispatcher_status(
+        &self,
+        request: DispatcherStatusRequest,
+    ) -> Result<DispatcherStatusResponse, ClientError> {
+        let response = self
+            .rpc
+            .call(WireMessage::DispatcherStatusRequest(request), self.timeout)
+            .await?;
+
+        match response.payload {
+            WireMessage::DispatcherStatusResponse(resp) => Ok(resp),
+            WireMessage::Error(err) => Err(ClientError::ErrorResponse(err)),
+            _ => Err(ClientError::UnexpectedResponse),
+        }
+    }
+
+    pub async fn device_disconnection(
+        &self,
+        request: DeviceDisconnectionRequest,
+    ) -> Result<DeviceDisconnectionResponse, ClientError> {
+        let response = self
+            .rpc
+            .call(
+                WireMessage::DeviceDisconnectionRequest(request),
+                self.timeout,
+            )
+            .await?;
+
+        match response.payload {
+            WireMessage::DeviceDisconnectionResponse(resp) => Ok(resp),
             WireMessage::Error(err) => Err(ClientError::ErrorResponse(err)),
             _ => Err(ClientError::UnexpectedResponse),
         }

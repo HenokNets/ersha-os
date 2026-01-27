@@ -1,4 +1,8 @@
-use ersha_core::{BatchUploadRequest, BatchUploadResponse, HelloRequest, HelloResponse};
+use ersha_core::{
+    AlertRequest, AlertResponse, BatchUploadRequest, BatchUploadResponse,
+    DeviceDisconnectionRequest, DeviceDisconnectionResponse, DispatcherStatusRequest,
+    DispatcherStatusResponse, HelloRequest, HelloResponse,
+};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
@@ -32,6 +36,12 @@ pub enum WireMessage {
     HelloResponse(HelloResponse),
     BatchUploadRequest(BatchUploadRequest),
     BatchUploadResponse(BatchUploadResponse),
+    AlertRequest(AlertRequest),
+    AlertResponse(AlertResponse),
+    DispatcherStatusRequest(DispatcherStatusRequest),
+    DispatcherStatusResponse(DispatcherStatusResponse),
+    DeviceDisconnectionRequest(DeviceDisconnectionRequest),
+    DeviceDisconnectionResponse(DeviceDisconnectionResponse),
     Error(WireError),
 }
 

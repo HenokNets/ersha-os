@@ -5,8 +5,8 @@ use ulid::Ulid;
 // We use `Box<str>` and `Box<[T]>` for structures that don't need to be
 // dynamically sized. This helps us keep allocations compact and avoid
 // accidental cloning of large values.
-type BoxStr = Box<str>;
-type BoxList<T> = Box<[T]>;
+pub type BoxStr = Box<str>;
+pub type BoxList<T> = Box<[T]>;
 
 /// Unique identifier for an edge device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -229,9 +229,13 @@ pub struct BatchUploadRequest {
     pub timestamp: jiff::Timestamp,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BatchUploadResponse {
     pub id: BatchId,
+    pub readings_stored: u32,
+    pub readings_rejected: u32,
+    pub statuses_stored: u32,
+    pub statuses_rejected: u32,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
@@ -243,6 +247,98 @@ pub struct HelloRequest {
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct HelloResponse {
+pub enum HelloResponse {
+    Accepted { dispatcher_id: DispatcherId },
+    Rejected { reason: HelloRejectionReason },
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub enum HelloRejectionReason {
+    UnknownDispatcher,
+    DispatcherSuspended,
+    InternalError,
+}
+
+// Alert types for urgent notifications from dispatch to prime
+
+/// Unique identifier for an alert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct AlertId(pub Ulid);
+
+/// Severity level of an alert.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum AlertSeverity {
+    Critical,
+    Warning,
+    Info,
+}
+
+/// Type of alert being reported.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub enum AlertType {
+    CriticalBattery,
+    SensorFailure,
+    DeviceOffline,
+    CommunicationError,
+    SecurityEvent,
+    Custom(BoxStr),
+}
+
+/// Request to report an urgent alert.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AlertRequest {
+    pub id: AlertId,
     pub dispatcher_id: DispatcherId,
+    pub device_id: Option<DeviceId>,
+    pub severity: AlertSeverity,
+    pub alert_type: AlertType,
+    pub message: BoxStr,
+    pub timestamp: jiff::Timestamp,
+}
+
+/// Response to an alert request.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AlertResponse {
+    pub alert_id: AlertId,
+    pub acknowledged: bool,
+}
+
+/// Request to report dispatcher status/health.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DispatcherStatusRequest {
+    pub dispatcher_id: DispatcherId,
+    pub connected_devices: u32,
+    pub uptime_seconds: u64,
+    pub pending_uploads: u32,
+    pub timestamp: jiff::Timestamp,
+}
+
+/// Response to a dispatcher status request.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DispatcherStatusResponse {
+    pub dispatcher_id: DispatcherId,
+}
+
+/// Reason why a device disconnected.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub enum DisconnectionReason {
+    Timeout,
+    GracefulClose,
+    Error(BoxStr),
+    Unknown,
+}
+
+/// Request to notify that an edge device has disconnected.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DeviceDisconnectionRequest {
+    pub device_id: DeviceId,
+    pub dispatcher_id: DispatcherId,
+    pub timestamp: jiff::Timestamp,
+    pub reason: Option<DisconnectionReason>,
+}
+
+/// Response to a device disconnection notification.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct DeviceDisconnectionResponse {
+    pub device_id: DeviceId,
 }
