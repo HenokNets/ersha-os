@@ -1035,6 +1035,7 @@ dependencies = [
  "embassy-time",
  "postcard",
  "serde",
+ "ulid",
 ]
 
 [[package]]

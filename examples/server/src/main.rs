@@ -16,7 +16,6 @@ async fn main() -> io::Result<()> {
     let addr = "0.0.0.0:9001";
     let listener = TcpListener::bind(addr).await?;
 
-
     println!("Listening on {:?}...", addr);
 
     while let Ok((stream, _)) = listener.accept().await {
