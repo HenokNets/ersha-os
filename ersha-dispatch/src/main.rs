@@ -88,7 +88,7 @@ where
     let cancel = CancellationToken::new();
 
     // Create edge receiver based on config
-    let edge_receiver = match &config.edge {
+    match &config.edge {
         EdgeConfig::Mock {
             reading_interval_secs,
             status_interval_secs,
@@ -98,16 +98,35 @@ where
                 reading_interval_secs,
                 status_interval_secs, device_count, "Using mock edge receiver"
             );
-            MockEdgeReceiver::new(
+
+            let receiver = MockEdgeReceiver::new(
                 dispatcher_id,
                 location,
                 *reading_interval_secs,
                 *status_interval_secs,
                 *device_count,
-            )
+            );
+            run_edge_receiver(receiver, cancel, storage, dispatcher_id, location, config).await?;
+        }
         }
     };
 
+    Ok(())
+}
+
+async fn run_edge_receiver<E: EdgeReceiver, S>(
+    edge_receiver: E,
+    cancel: CancellationToken,
+    storage: S,
+    dispatcher_id: DispatcherId,
+    location: H3Cell,
+    config: Config,
+) -> color_eyre::Result<()>
+where
+    S: SensorReadingsStorage + DeviceStatusStorage + Clone + Send + Sync + 'static,
+    <S as SensorReadingsStorage>::Error: std::error::Error + Send + Sync + 'static,
+    <S as DeviceStatusStorage>::Error: std::error::Error + Send + Sync + 'static,
+{
     // Start edge receiver
     let edge_rx = edge_receiver.start(cancel.clone()).await?;
 
