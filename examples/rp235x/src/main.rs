@@ -150,7 +150,7 @@ async fn main(spawner: Spawner) {
     let tx_buffer = TX_BUFFER.init([0; 4096]);
 
     let wifi = Wifi::new(stack, rx_buffer, tx_buffer);
-    let engine = Engine::new(wifi).await.unwrap();
+    let engine = Engine::new(wifi, 0x887ade7255fffff).await.unwrap();
 
     spawner.spawn(unwrap!(soil_moisture(&MockSoilMoistureSensor)));
     spawner.spawn(unwrap!(air_temperature(&MockTempSensor)));

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub type DeviceId = u128;
 pub type SensorId = u128;
 pub type ReadingId = u16;
+pub type H3Cell = u64;
 
 #[derive(Serialize, Deserialize, Format)]
 pub struct ReadingPacket {

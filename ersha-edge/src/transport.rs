@@ -1,6 +1,4 @@
-use crate::DeviceId;
-use crate::Error;
-use crate::ReadingPacket;
+use crate::{DeviceId, Error, H3Cell, ReadingPacket};
 
 use embassy_net::{
     IpAddress, IpEndpoint, Stack,
@@ -36,7 +34,7 @@ pub struct Msg<'a> {
 
 pub trait Transport {
     /// Called once after network join / connect
-    fn provision(&mut self) -> impl Future<Output = Result<DeviceId, Error>>;
+    fn provision(&mut self, location: H3Cell) -> impl Future<Output = Result<DeviceId, Error>>;
 
     /// Send a single sensor reading
     fn send_reading(&mut self, packet: &ReadingPacket) -> impl Future<Output = Result<(), Error>>;
@@ -57,7 +55,7 @@ impl<'a> Wifi<'a> {
 }
 
 impl<'a> Transport for Wifi<'a> {
-    async fn provision(&mut self) -> Result<DeviceId, Error> {
+    async fn provision(&mut self, location: H3Cell) -> Result<DeviceId, Error> {
         if self.socket.state() != State::Established {
             self.socket
                 .connect(SERVER_ADDR)
@@ -67,6 +65,12 @@ impl<'a> Transport for Wifi<'a> {
 
         self.socket
             .write(b"HELLO")
+            .await
+            .map_err(|_| Error::UnableToSend)?;
+
+        // TODO: use a proper frame
+        self.socket
+            .write(&location.to_be_bytes())
             .await
             .map_err(|_| Error::UnableToSend)?;
 
