@@ -4,6 +4,7 @@ use std::time::Duration;
 use axum::{Router, routing::get};
 use clap::Parser;
 use ersha_core::{BatchId, BatchUploadRequest, DispatcherId, H3Cell, HelloRequest};
+use ersha_dispatch::edge::tcp::TcpEdgeReceiver;
 use ersha_dispatch::{
     Config, DeviceStatusStorage, EdgeConfig, EdgeData, EdgeReceiver, MemoryStorage,
     MockEdgeReceiver, SensorReadingsStorage, SqliteStorage, StorageConfig,
@@ -108,6 +109,11 @@ where
             );
             run_edge_receiver(receiver, cancel, storage, dispatcher_id, location, config).await?;
         }
+        EdgeConfig::Tcp { addr } => {
+            info!(?addr, "Started TCP edge receiver");
+
+            let receiver = TcpEdgeReceiver::new(*addr, dispatcher_id);
+            run_edge_receiver(receiver, cancel, storage, dispatcher_id, location, config).await?;
         }
     };
 
