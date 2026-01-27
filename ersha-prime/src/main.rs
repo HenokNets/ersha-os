@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use axum::{Router, routing::get};
+use axum::routing::get;
 use clap::Parser;
 use ersha_core::{
     AlertRequest, AlertResponse, BatchUploadRequest, BatchUploadResponse,
@@ -10,6 +10,7 @@ use ersha_core::{
     HelloResponse,
 };
 use ersha_prime::{
+    api,
     config::{Config, RegistryConfig},
     registry::{
         DeviceRegistry, DeviceStatusRegistry, DispatcherRegistry, ReadingRegistry,
@@ -126,6 +127,10 @@ where
     R: ReadingRegistry,
     S: DeviceStatusRegistry,
 {
+    // Clone registries for HTTP API before moving them into AppState
+    let api_dispatcher_registry = dispatcher_registry.clone();
+    let api_device_registry = device_registry.clone();
+
     let state = AppState {
         dispatcher_registry,
         device_registry,
@@ -307,7 +312,11 @@ where
             },
         );
 
-    let axum_app = Router::new().route("/health", get(health_handler));
+    // Create the API router with dispatcher and device routes
+    let api_router = api::api_router(api_dispatcher_registry, api_device_registry);
+
+    // Merge with health endpoint
+    let axum_app = api_router.route("/health", get(health_handler));
 
     let axum_listener = TcpListener::bind(http_addr).await?;
     info!(%http_addr, "HTTP server listening");
