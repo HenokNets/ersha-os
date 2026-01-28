@@ -1,0 +1,284 @@
+use axum::{
+    Json,
+    extract::{Path, Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
+use ersha_core::{Dispatcher, DispatcherId, DispatcherState, H3Cell};
+use serde::{Deserialize, Serialize};
+use ulid::Ulid;
+
+use crate::registry::{
+    DeviceRegistry, DispatcherRegistry,
+    filter::{DispatcherFilter, DispatcherSortBy, Pagination, QueryOptions, SortOrder},
+};
+
+use super::ApiState;
+
+/// Request body for registering a new dispatcher.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterDispatcherRequest {
+    /// Optional ID. If not provided, a new ULID will be generated.
+    pub id: Option<Ulid>,
+    /// H3 cell location of the dispatcher.
+    pub location: u64,
+}
+
+/// Response body for a dispatcher.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DispatcherResponse {
+    pub id: String,
+    pub location: u64,
+    pub state: String,
+    pub provisioned_at: String,
+}
+
+impl From<Dispatcher> for DispatcherResponse {
+    fn from(d: Dispatcher) -> Self {
+        Self {
+            id: d.id.0.to_string(),
+            location: d.location.0,
+            state: match d.state {
+                DispatcherState::Active => "active".to_string(),
+                DispatcherState::Suspended => "suspended".to_string(),
+            },
+            provisioned_at: d.provisioned_at.to_string(),
+        }
+    }
+}
+
+/// Response body for list of dispatchers.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListDispatchersResponse {
+    pub dispatchers: Vec<DispatcherResponse>,
+    pub total: usize,
+}
+
+/// State filter for queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StateFilter {
+    Active,
+    Suspended,
+}
+
+/// Sort order for queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QuerySortOrder {
+    Asc,
+    Desc,
+}
+
+/// Query parameters for listing dispatchers.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct ListDispatchersQuery {
+    /// Filter by state
+    pub state: Option<StateFilter>,
+    /// Filter by location (H3 cell)
+    pub location: Option<u64>,
+    /// Sort order
+    pub sort_order: Option<QuerySortOrder>,
+    /// Offset for pagination
+    pub offset: Option<usize>,
+    /// Limit for pagination (max 100)
+    pub limit: Option<usize>,
+    /// Cursor for cursor-based pagination (ULID)
+    pub after: Option<String>,
+}
+
+/// Register a new dispatcher.
+///
+/// POST /api/dispatchers
+pub async fn register_dispatcher<D, Dev>(
+    State(state): State<ApiState<D, Dev>>,
+    Json(request): Json<RegisterDispatcherRequest>,
+) -> impl IntoResponse
+where
+    D: DispatcherRegistry,
+    Dev: DeviceRegistry,
+{
+    let id = request.id.unwrap_or_else(Ulid::new);
+    let dispatcher = Dispatcher {
+        id: DispatcherId(id),
+        location: H3Cell(request.location),
+        state: DispatcherState::Active,
+        provisioned_at: jiff::Timestamp::now(),
+    };
+
+    match state.dispatcher_registry.register(dispatcher.clone()).await {
+        Ok(()) => (
+            StatusCode::CREATED,
+            Json(DispatcherResponse::from(dispatcher)),
+        )
+            .into_response(),
+        Err(e) => {
+            tracing::error!(error = ?e, "Failed to register dispatcher");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to register dispatcher",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Get a dispatcher by ID.
+///
+/// GET /api/dispatchers/:id
+pub async fn get_dispatcher<D, Dev>(
+    State(state): State<ApiState<D, Dev>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse
+where
+    D: DispatcherRegistry,
+    Dev: DeviceRegistry,
+{
+    let ulid = match id.parse::<Ulid>() {
+        Ok(ulid) => ulid,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid dispatcher ID").into_response(),
+    };
+
+    match state.dispatcher_registry.get(DispatcherId(ulid)).await {
+        Ok(Some(dispatcher)) => {
+            (StatusCode::OK, Json(DispatcherResponse::from(dispatcher))).into_response()
+        }
+        Ok(None) => (StatusCode::NOT_FOUND, "Dispatcher not found").into_response(),
+        Err(e) => {
+            tracing::error!(error = ?e, "Failed to get dispatcher");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to get dispatcher",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// List all dispatchers.
+///
+/// GET /api/dispatchers
+pub async fn list_dispatchers<D, Dev>(
+    State(state): State<ApiState<D, Dev>>,
+    Query(query): Query<ListDispatchersQuery>,
+) -> impl IntoResponse
+where
+    D: DispatcherRegistry,
+    Dev: DeviceRegistry,
+{
+    // Build filter
+    let mut filter = DispatcherFilter::default();
+
+    if let Some(state_filter) = query.state {
+        let dispatcher_state = match state_filter {
+            StateFilter::Active => DispatcherState::Active,
+            StateFilter::Suspended => DispatcherState::Suspended,
+        };
+        filter.states = Some(vec![dispatcher_state]);
+    }
+
+    if let Some(location) = query.location {
+        filter.locations = Some(vec![H3Cell(location)]);
+    }
+
+    // Build sort options
+    let sort_order = match query.sort_order {
+        Some(QuerySortOrder::Asc) => SortOrder::Asc,
+        Some(QuerySortOrder::Desc) | None => SortOrder::Desc,
+    };
+
+    // Build pagination
+    let pagination = if let Some(ref after_str) = query.after {
+        match after_str.parse::<Ulid>() {
+            Ok(cursor) => Pagination::Cursor {
+                after: Some(cursor),
+                limit: query.limit.unwrap_or(100).min(100),
+            },
+            Err(_) => return (StatusCode::BAD_REQUEST, "Invalid cursor").into_response(),
+        }
+    } else {
+        Pagination::Offset {
+            offset: query.offset.unwrap_or(0),
+            limit: query.limit.unwrap_or(100).min(100),
+        }
+    };
+
+    let options = QueryOptions {
+        filter,
+        sort_by: DispatcherSortBy::ProvisionAt,
+        sort_order,
+        pagination,
+    };
+
+    match state.dispatcher_registry.list(options).await {
+        Ok(dispatchers) => {
+            let total = dispatchers.len();
+            let response = ListDispatchersResponse {
+                dispatchers: dispatchers
+                    .into_iter()
+                    .map(DispatcherResponse::from)
+                    .collect(),
+                total,
+            };
+            (StatusCode::OK, Json(response)).into_response()
+        }
+        Err(e) => {
+            tracing::error!(error = ?e, "Failed to list dispatchers");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to list dispatchers",
+            )
+                .into_response()
+        }
+    }
+}
+
+/// Suspend a dispatcher.
+///
+/// POST /api/dispatchers/:id/suspend
+pub async fn suspend_dispatcher<D, Dev>(
+    State(state): State<ApiState<D, Dev>>,
+    Path(id): Path<String>,
+) -> impl IntoResponse
+where
+    D: DispatcherRegistry,
+    Dev: DeviceRegistry,
+{
+    let ulid = match id.parse::<Ulid>() {
+        Ok(ulid) => ulid,
+        Err(_) => return (StatusCode::BAD_REQUEST, "Invalid dispatcher ID").into_response(),
+    };
+
+    match state.dispatcher_registry.suspend(DispatcherId(ulid)).await {
+        Ok(()) => {
+            // Fetch the updated dispatcher to return
+            match state.dispatcher_registry.get(DispatcherId(ulid)).await {
+                Ok(Some(dispatcher)) => {
+                    (StatusCode::OK, Json(DispatcherResponse::from(dispatcher))).into_response()
+                }
+                Ok(None) => (StatusCode::NOT_FOUND, "Dispatcher not found").into_response(),
+                Err(e) => {
+                    tracing::error!(error = ?e, "Failed to get suspended dispatcher");
+                    (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Dispatcher suspended but failed to fetch",
+                    )
+                        .into_response()
+                }
+            }
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            if err_str.contains("not found") || err_str.contains("NotFound") {
+                (StatusCode::NOT_FOUND, "Dispatcher not found").into_response()
+            } else {
+                tracing::error!(error = ?e, "Failed to suspend dispatcher");
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to suspend dispatcher",
+                )
+                    .into_response()
+            }
+        }
+    }
+}

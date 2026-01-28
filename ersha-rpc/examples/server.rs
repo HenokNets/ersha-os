@@ -57,7 +57,7 @@ async fn main() {
                     count, hello.dispatcher_id, hello.location
                 );
 
-                HelloResponse {
+                HelloResponse::Accepted {
                     dispatcher_id: hello.dispatcher_id,
                 }
             }
@@ -66,15 +66,23 @@ async fn main() {
             let counter = state.request_count.clone();
             async move {
                 let count = counter.fetch_add(1, Ordering::SeqCst) + 1;
+                let readings_count = request.readings.len() as u32;
+                let statuses_count = request.statuses.len() as u32;
                 info!(
                     "received batch upload request #{}: batch_id = {:?}, dispatcher_id = {:?}, readings = {}, statuses = {}",
                     count,
                     request.id,
                     request.dispatcher_id,
-                    request.readings.len(),
-                    request.statuses.len()
+                    readings_count,
+                    statuses_count
                 );
-                BatchUploadResponse { id: request.id }
+                BatchUploadResponse {
+                    id: request.id,
+                    readings_stored: readings_count,
+                    readings_rejected: 0,
+                    statuses_stored: statuses_count,
+                    statuses_rejected: 0,
+                }
             }
         });
 

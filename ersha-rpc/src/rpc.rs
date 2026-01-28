@@ -12,11 +12,17 @@ use crate::{Envelope, MessageId, WireMessage, read_frame, write_frame};
 #[derive(Debug, Error)]
 pub enum RpcError {
     #[error("send error: {0}")]
-    SendError(#[from] mpsc::error::SendError<Envelope>),
+    SendError(#[source] Box<mpsc::error::SendError<Envelope>>),
     #[error("response channel closed: {0}")]
     ChannelClosed(#[from] oneshot::error::RecvError),
     #[error("timeout: {0}")]
     Timeout(#[from] tokio::time::error::Elapsed),
+}
+
+impl From<mpsc::error::SendError<Envelope>> for RpcError {
+    fn from(err: mpsc::error::SendError<Envelope>) -> Self {
+        RpcError::SendError(Box::new(err))
+    }
 }
 
 pub struct RpcTcp {
@@ -115,7 +121,7 @@ impl RpcTcp {
 
         if let Err(e) = self.tx.send(env).await {
             self.pending.remove(&msg_id);
-            return Err(RpcError::SendError(e));
+            return Err(e.into());
         }
 
         match tokio::time::timeout(timeout, rx_wait).await {
