@@ -498,7 +498,7 @@ async fn connect_and_register(
 ) -> color_eyre::Result<Client> {
     let stream = TcpStream::connect(prime_addr).await?;
 
-    let rustls_config = ersha_tls::client_config(&tls_config)?;
+    let rustls_config = ersha_tls::client_config(tls_config)?;
     let connector = TlsConnector::from(Arc::new(rustls_config));
 
     let server_name = ServerName::try_from(tls_config.domain.clone())?;
