@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -52,6 +52,39 @@ impl From<Dispatcher> for DispatcherResponse {
 pub struct ListDispatchersResponse {
     pub dispatchers: Vec<DispatcherResponse>,
     pub total: usize,
+}
+
+/// State filter for queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StateFilter {
+    Active,
+    Suspended,
+}
+
+/// Sort order for queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum QuerySortOrder {
+    Asc,
+    Desc,
+}
+
+/// Query parameters for listing dispatchers.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct ListDispatchersQuery {
+    /// Filter by state
+    pub state: Option<StateFilter>,
+    /// Filter by location (H3 cell)
+    pub location: Option<u64>,
+    /// Sort order
+    pub sort_order: Option<QuerySortOrder>,
+    /// Offset for pagination
+    pub offset: Option<usize>,
+    /// Limit for pagination (max 100)
+    pub limit: Option<usize>,
+    /// Cursor for cursor-based pagination (ULID)
+    pub after: Option<String>,
 }
 
 /// Register a new dispatcher.
@@ -125,19 +158,56 @@ where
 /// List all dispatchers.
 ///
 /// GET /api/dispatchers
-pub async fn list_dispatchers<D, Dev>(State(state): State<ApiState<D, Dev>>) -> impl IntoResponse
+pub async fn list_dispatchers<D, Dev>(
+    State(state): State<ApiState<D, Dev>>,
+    Query(query): Query<ListDispatchersQuery>,
+) -> impl IntoResponse
 where
     D: DispatcherRegistry,
     Dev: DeviceRegistry,
 {
+    // Build filter
+    let mut filter = DispatcherFilter::default();
+
+    if let Some(state_filter) = query.state {
+        let dispatcher_state = match state_filter {
+            StateFilter::Active => DispatcherState::Active,
+            StateFilter::Suspended => DispatcherState::Suspended,
+        };
+        filter.states = Some(vec![dispatcher_state]);
+    }
+
+    if let Some(location) = query.location {
+        filter.locations = Some(vec![H3Cell(location)]);
+    }
+
+    // Build sort options
+    let sort_order = match query.sort_order {
+        Some(QuerySortOrder::Asc) => SortOrder::Asc,
+        Some(QuerySortOrder::Desc) | None => SortOrder::Desc,
+    };
+
+    // Build pagination
+    let pagination = if let Some(ref after_str) = query.after {
+        match after_str.parse::<Ulid>() {
+            Ok(cursor) => Pagination::Cursor {
+                after: Some(cursor),
+                limit: query.limit.unwrap_or(100).min(100),
+            },
+            Err(_) => return (StatusCode::BAD_REQUEST, "Invalid cursor").into_response(),
+        }
+    } else {
+        Pagination::Offset {
+            offset: query.offset.unwrap_or(0),
+            limit: query.limit.unwrap_or(100).min(100),
+        }
+    };
+
     let options = QueryOptions {
-        filter: DispatcherFilter::default(),
+        filter,
         sort_by: DispatcherSortBy::ProvisionAt,
-        sort_order: SortOrder::Desc,
-        pagination: Pagination::Offset {
-            offset: 0,
-            limit: 100,
-        },
+        sort_order,
+        pagination,
     };
 
     match state.dispatcher_registry.list(options).await {

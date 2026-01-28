@@ -1,6 +1,6 @@
 use axum::{
     Json,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::IntoResponse,
 };
@@ -101,6 +101,44 @@ impl From<Device> for DeviceResponse {
 pub struct ListDevicesResponse {
     pub devices: Vec<DeviceResponse>,
     pub total: usize,
+}
+
+// Re-export shared query enums from dispatchers
+pub use super::dispatchers::{QuerySortOrder, StateFilter};
+
+/// Sort field for device queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceQuerySortBy {
+    State,
+    Manufacturer,
+    ProvisionedAt,
+    SensorCount,
+}
+
+/// Query parameters for listing devices.
+#[derive(Debug, Default, Deserialize, Serialize)]
+pub struct ListDevicesQuery {
+    /// Filter by state
+    pub state: Option<StateFilter>,
+    /// Filter by location (H3 cell)
+    pub location: Option<u64>,
+    /// Filter by manufacturer (pattern match)
+    pub manufacturer: Option<String>,
+    /// Filter by provisioned after (ISO 8601 timestamp)
+    pub provisioned_after: Option<String>,
+    /// Filter by provisioned before (ISO 8601 timestamp)
+    pub provisioned_before: Option<String>,
+    /// Sort by field
+    pub sort_by: Option<DeviceQuerySortBy>,
+    /// Sort order
+    pub sort_order: Option<QuerySortOrder>,
+    /// Offset for pagination
+    pub offset: Option<usize>,
+    /// Limit for pagination (max 100)
+    pub limit: Option<usize>,
+    /// Cursor for cursor-based pagination (ULID)
+    pub after: Option<String>,
 }
 
 fn parse_sensor_kind(kind: &str) -> Option<SensorKind> {
@@ -219,19 +257,93 @@ where
 /// List all devices.
 ///
 /// GET /api/devices
-pub async fn list_devices<D, Dev>(State(state): State<ApiState<D, Dev>>) -> impl IntoResponse
+pub async fn list_devices<D, Dev>(
+    State(state): State<ApiState<D, Dev>>,
+    Query(query): Query<ListDevicesQuery>,
+) -> impl IntoResponse
 where
     D: DispatcherRegistry,
     Dev: DeviceRegistry,
 {
+    // Build filter
+    let mut filter = DeviceFilter::default();
+
+    if let Some(state_filter) = query.state {
+        let device_state = match state_filter {
+            StateFilter::Active => DeviceState::Active,
+            StateFilter::Suspended => DeviceState::Suspended,
+        };
+        filter.states = Some(vec![device_state]);
+    }
+
+    if let Some(location) = query.location {
+        filter.locations = Some(vec![H3Cell(location)]);
+    }
+
+    if let Some(ref manufacturer) = query.manufacturer {
+        filter.manufacturer_pattern = Some(manufacturer.clone());
+    }
+
+    if let Some(ref ts_str) = query.provisioned_after {
+        match ts_str.parse::<jiff::Timestamp>() {
+            Ok(ts) => filter.provisioned_after = Some(ts),
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid provisioned_after timestamp",
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    if let Some(ref ts_str) = query.provisioned_before {
+        match ts_str.parse::<jiff::Timestamp>() {
+            Ok(ts) => filter.provisioned_before = Some(ts),
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    "Invalid provisioned_before timestamp",
+                )
+                    .into_response();
+            }
+        }
+    }
+
+    // Build sort options
+    let sort_by = match query.sort_by {
+        Some(DeviceQuerySortBy::State) => DeviceSortBy::State,
+        Some(DeviceQuerySortBy::Manufacturer) => DeviceSortBy::Manufacturer,
+        Some(DeviceQuerySortBy::SensorCount) => DeviceSortBy::SensorCount,
+        Some(DeviceQuerySortBy::ProvisionedAt) | None => DeviceSortBy::ProvisionAt,
+    };
+
+    let sort_order = match query.sort_order {
+        Some(QuerySortOrder::Asc) => SortOrder::Asc,
+        Some(QuerySortOrder::Desc) | None => SortOrder::Desc,
+    };
+
+    // Build pagination
+    let pagination = if let Some(ref after_str) = query.after {
+        match after_str.parse::<Ulid>() {
+            Ok(cursor) => Pagination::Cursor {
+                after: Some(cursor),
+                limit: query.limit.unwrap_or(100).min(100),
+            },
+            Err(_) => return (StatusCode::BAD_REQUEST, "Invalid cursor").into_response(),
+        }
+    } else {
+        Pagination::Offset {
+            offset: query.offset.unwrap_or(0),
+            limit: query.limit.unwrap_or(100).min(100),
+        }
+    };
+
     let options = QueryOptions {
-        filter: DeviceFilter::default(),
-        sort_by: DeviceSortBy::ProvisionAt,
-        sort_order: SortOrder::Desc,
-        pagination: Pagination::Offset {
-            offset: 0,
-            limit: 100,
-        },
+        filter,
+        sort_by,
+        sort_order,
+        pagination,
     };
 
     match state.device_registry.list(options).await {

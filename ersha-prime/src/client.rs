@@ -4,9 +4,18 @@ use thiserror::Error;
 use ulid::Ulid;
 
 use crate::api::{
-    devices::{DeviceResponse, ListDevicesResponse, RegisterDeviceRequest, SensorRequest},
-    dispatchers::{DispatcherResponse, ListDispatchersResponse, RegisterDispatcherRequest},
+    devices::{
+        DeviceResponse, ListDevicesQuery, ListDevicesResponse, RegisterDeviceRequest, SensorRequest,
+    },
+    dispatchers::{
+        DispatcherResponse, ListDispatchersQuery, ListDispatchersResponse,
+        RegisterDispatcherRequest,
+    },
 };
+
+// Re-export query enums for convenience
+pub use crate::api::devices::DeviceQuerySortBy;
+pub use crate::api::dispatchers::{QuerySortOrder, StateFilter};
 
 /// Error type for API client operations.
 #[derive(Debug, Error)]
@@ -120,9 +129,24 @@ impl Client {
     /// # Returns
     /// A list of all registered dispatchers.
     pub async fn list_dispatchers(&self) -> Result<ListDispatchersResponse, ClientError> {
+        self.list_dispatchers_with_query(ListDispatchersQuery::default())
+            .await
+    }
+
+    /// List dispatchers with query parameters.
+    ///
+    /// # Arguments
+    /// * `query` - Query parameters for filtering, sorting, and pagination
+    ///
+    /// # Returns
+    /// A filtered list of dispatchers.
+    pub async fn list_dispatchers_with_query(
+        &self,
+        query: ListDispatchersQuery,
+    ) -> Result<ListDispatchersResponse, ClientError> {
         let url = format!("{}/api/dispatchers", self.base_url);
 
-        let response = self.http.get(&url).send().await?;
+        let response = self.http.get(&url).query(&query).send().await?;
 
         handle_response(response).await
     }
@@ -207,9 +231,24 @@ impl Client {
     /// # Returns
     /// A list of all registered devices.
     pub async fn list_devices(&self) -> Result<ListDevicesResponse, ClientError> {
+        self.list_devices_with_query(ListDevicesQuery::default())
+            .await
+    }
+
+    /// List devices with query parameters.
+    ///
+    /// # Arguments
+    /// * `query` - Query parameters for filtering, sorting, and pagination
+    ///
+    /// # Returns
+    /// A filtered list of devices.
+    pub async fn list_devices_with_query(
+        &self,
+        query: ListDevicesQuery,
+    ) -> Result<ListDevicesResponse, ClientError> {
         let url = format!("{}/api/devices", self.base_url);
 
-        let response = self.http.get(&url).send().await?;
+        let response = self.http.get(&url).query(&query).send().await?;
 
         handle_response(response).await
     }
@@ -235,6 +274,138 @@ where
             status: status.as_u16(),
             message,
         })
+    }
+}
+
+/// Builder for creating dispatcher list queries.
+#[derive(Default)]
+pub struct ListDispatchersQueryBuilder {
+    query: ListDispatchersQuery,
+}
+
+impl ListDispatchersQueryBuilder {
+    /// Create a new query builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Filter by state.
+    pub fn state(mut self, state: StateFilter) -> Self {
+        self.query.state = Some(state);
+        self
+    }
+
+    /// Filter by location (H3 cell).
+    pub fn location(mut self, location: u64) -> Self {
+        self.query.location = Some(location);
+        self
+    }
+
+    /// Set sort order.
+    pub fn sort_order(mut self, order: QuerySortOrder) -> Self {
+        self.query.sort_order = Some(order);
+        self
+    }
+
+    /// Set pagination offset.
+    pub fn offset(mut self, offset: usize) -> Self {
+        self.query.offset = Some(offset);
+        self
+    }
+
+    /// Set pagination limit (max 100).
+    pub fn limit(mut self, limit: usize) -> Self {
+        self.query.limit = Some(limit);
+        self
+    }
+
+    /// Set cursor for cursor-based pagination.
+    pub fn after(mut self, cursor: impl Into<String>) -> Self {
+        self.query.after = Some(cursor.into());
+        self
+    }
+
+    /// Build the query.
+    pub fn build(self) -> ListDispatchersQuery {
+        self.query
+    }
+}
+
+/// Builder for creating device list queries.
+#[derive(Default)]
+pub struct ListDevicesQueryBuilder {
+    query: ListDevicesQuery,
+}
+
+impl ListDevicesQueryBuilder {
+    /// Create a new query builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Filter by state.
+    pub fn state(mut self, state: StateFilter) -> Self {
+        self.query.state = Some(state);
+        self
+    }
+
+    /// Filter by location (H3 cell).
+    pub fn location(mut self, location: u64) -> Self {
+        self.query.location = Some(location);
+        self
+    }
+
+    /// Filter by manufacturer (pattern match).
+    pub fn manufacturer(mut self, manufacturer: impl Into<String>) -> Self {
+        self.query.manufacturer = Some(manufacturer.into());
+        self
+    }
+
+    /// Filter by provisioned after timestamp (ISO 8601).
+    pub fn provisioned_after(mut self, ts: impl Into<String>) -> Self {
+        self.query.provisioned_after = Some(ts.into());
+        self
+    }
+
+    /// Filter by provisioned before timestamp (ISO 8601).
+    pub fn provisioned_before(mut self, ts: impl Into<String>) -> Self {
+        self.query.provisioned_before = Some(ts.into());
+        self
+    }
+
+    /// Set sort field.
+    pub fn sort_by(mut self, field: DeviceQuerySortBy) -> Self {
+        self.query.sort_by = Some(field);
+        self
+    }
+
+    /// Set sort order.
+    pub fn sort_order(mut self, order: QuerySortOrder) -> Self {
+        self.query.sort_order = Some(order);
+        self
+    }
+
+    /// Set pagination offset.
+    pub fn offset(mut self, offset: usize) -> Self {
+        self.query.offset = Some(offset);
+        self
+    }
+
+    /// Set pagination limit (max 100).
+    pub fn limit(mut self, limit: usize) -> Self {
+        self.query.limit = Some(limit);
+        self
+    }
+
+    /// Set cursor for cursor-based pagination.
+    pub fn after(mut self, cursor: impl Into<String>) -> Self {
+        self.query.after = Some(cursor.into());
+        self
+    }
+
+    /// Build the query.
+    pub fn build(self) -> ListDevicesQuery {
+        self.query
     }
 }
 
