@@ -11,7 +11,7 @@ local totalDevices = common.statPanel(
 
 local activeDevices = common.statPanel(
   'Active Devices',
-  "SELECT count() FROM devices FINAL WHERE state = 'Active'"
+  "SELECT count() FROM devices FINAL WHERE state = 1"
 )
 + g.panel.stat.gridPos.withW(4)
 + g.panel.stat.gridPos.withH(4)

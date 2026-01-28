@@ -1,10 +1,9 @@
 apiVersion: 1
 
 providers:
-  - name: 'Ersha OS'
+  - name: 'Ersha OS Dashboards'
     orgId: 1
-    folder: 'Ersha OS'
-    folderUid: 'ersha-os'
+    folder: 'Ersha'
     type: file
     disableDeletion: false
     updateIntervalSeconds: 10

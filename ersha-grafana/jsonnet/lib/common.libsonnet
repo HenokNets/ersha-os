@@ -55,13 +55,21 @@ local g = import 'github.com/grafana/grafonnet/gen/grafonnet-latest/main.libsonn
     + g.dashboard.variable.query.selectionOptions.withMulti(true)
     + g.dashboard.variable.query.refresh.onLoad(),
 
+  // ClickHouse query target helper
+  clickhouseTarget(query, refId='A', format=1):: {
+    datasource: $.datasource,
+    rawSql: query,
+    refId: refId,
+    format: format,
+    queryType: 'sql',
+  },
+
   // Panel helpers
   statPanel(title, query, unit='none')::
     g.panel.stat.new(title)
     + g.panel.stat.queryOptions.withDatasource('grafana-clickhouse-datasource', '${DS_CLICKHOUSE}')
     + g.panel.stat.queryOptions.withTargets([
-      g.query.prometheus.new('${DS_CLICKHOUSE}', query)
-      + { rawSql: query, format: 1, queryType: 'sql' },
+      $.clickhouseTarget(query, 'A', 1),
     ])
     + g.panel.stat.standardOptions.withUnit(unit)
     + g.panel.stat.options.withGraphMode('none')
@@ -71,8 +79,7 @@ local g = import 'github.com/grafana/grafonnet/gen/grafonnet-latest/main.libsonn
     g.panel.timeSeries.new(title)
     + g.panel.timeSeries.queryOptions.withDatasource('grafana-clickhouse-datasource', '${DS_CLICKHOUSE}')
     + g.panel.timeSeries.queryOptions.withTargets([
-      g.query.prometheus.new('${DS_CLICKHOUSE}', query)
-      + { rawSql: query, format: 2, queryType: 'sql' },
+      $.clickhouseTarget(query, 'A', 2),
     ])
     + g.panel.timeSeries.standardOptions.withUnit(unit)
     + g.panel.timeSeries.options.legend.withDisplayMode(legendMode),
@@ -81,8 +88,7 @@ local g = import 'github.com/grafana/grafonnet/gen/grafonnet-latest/main.libsonn
     g.panel.gauge.new(title)
     + g.panel.gauge.queryOptions.withDatasource('grafana-clickhouse-datasource', '${DS_CLICKHOUSE}')
     + g.panel.gauge.queryOptions.withTargets([
-      g.query.prometheus.new('${DS_CLICKHOUSE}', query)
-      + { rawSql: query, format: 1, queryType: 'sql' },
+      $.clickhouseTarget(query, 'A', 1),
     ])
     + g.panel.gauge.standardOptions.withUnit(unit)
     + g.panel.gauge.standardOptions.withMin(min)
@@ -92,16 +98,14 @@ local g = import 'github.com/grafana/grafonnet/gen/grafonnet-latest/main.libsonn
     g.panel.table.new(title)
     + g.panel.table.queryOptions.withDatasource('grafana-clickhouse-datasource', '${DS_CLICKHOUSE}')
     + g.panel.table.queryOptions.withTargets([
-      g.query.prometheus.new('${DS_CLICKHOUSE}', query)
-      + { rawSql: query, format: 2, queryType: 'sql' },
+      $.clickhouseTarget(query, 'A', 2),
     ]),
 
   barGaugePanel(title, query, unit='none')::
     g.panel.barGauge.new(title)
     + g.panel.barGauge.queryOptions.withDatasource('grafana-clickhouse-datasource', '${DS_CLICKHOUSE}')
     + g.panel.barGauge.queryOptions.withTargets([
-      g.query.prometheus.new('${DS_CLICKHOUSE}', query)
-      + { rawSql: query, format: 2, queryType: 'sql' },
+      $.clickhouseTarget(query, 'A', 2),
     ])
     + g.panel.barGauge.standardOptions.withUnit(unit),
 

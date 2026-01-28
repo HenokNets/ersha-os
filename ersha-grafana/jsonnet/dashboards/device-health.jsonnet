@@ -92,13 +92,13 @@ local lowBatteryDevices = common.tablePanel(
       d.manufacturer,
       ds.battery_percent,
       ds.signal_rssi,
-      ds.timestamp as last_seen
+      ds.last_seen
     FROM (
       SELECT
         device_id,
         argMax(battery_percent, timestamp) as battery_percent,
         argMax(signal_rssi, timestamp) as signal_rssi,
-        max(timestamp) as timestamp
+        max(timestamp) as last_seen
       FROM device_statuses
       GROUP BY device_id
     ) ds

@@ -20,7 +20,8 @@ compile:
     jsonnet -J jsonnet/vendor -o dashboards/overview.json jsonnet/dashboards/overview.jsonnet
     jsonnet -J jsonnet/vendor -o dashboards/device-health.json jsonnet/dashboards/device-health.jsonnet
     jsonnet -J jsonnet/vendor -o dashboards/sensor-readings.json jsonnet/dashboards/sensor-readings.jsonnet
-    @echo "Compiled 3 dashboards to dashboards/"
+    jsonnet -J jsonnet/vendor -o dashboards/world-map.json jsonnet/dashboards/world-map.jsonnet
+    @echo "Compiled 4 dashboards to dashboards/"
 
 # Install deps and compile dashboards
 build: install-deps compile
@@ -62,6 +63,7 @@ validate:
     jsonnet -J jsonnet/vendor --lint jsonnet/dashboards/overview.jsonnet
     jsonnet -J jsonnet/vendor --lint jsonnet/dashboards/device-health.jsonnet
     jsonnet -J jsonnet/vendor --lint jsonnet/dashboards/sensor-readings.jsonnet
+    jsonnet -J jsonnet/vendor --lint jsonnet/dashboards/world-map.jsonnet
     @echo "All files valid!"
 
 # Format jsonnet files
