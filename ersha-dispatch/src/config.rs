@@ -87,7 +87,7 @@ impl Default for Config {
                 status_interval_secs: 30,
                 device_count: 3,
             },
-            tls: TlsConfig::default(),
+            tls: TlsConfig::client_default(),
         }
     }
 }

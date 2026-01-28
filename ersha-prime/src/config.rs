@@ -44,7 +44,7 @@ impl Default for Config {
                 http_addr: "0.0.0.0:8080".parse().unwrap(),
             },
             registry: RegistryConfig::Memory,
-            tls: TlsConfig::default(),
+            tls: TlsConfig::server_default(),
         }
     }
 }

@@ -1,6 +1,7 @@
 .direnv
 target
 
+keys/*
 ersha-dispatch/keys/*
 ersha-prime/keys/*
 ersha-tls/*.crt

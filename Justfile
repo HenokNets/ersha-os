@@ -129,3 +129,61 @@ doc:
 # Open documentation in browser
 doc-open:
     cargo doc --no-deps --open
+
+# ============================================================
+# TLS & Security Recipes
+# ============================================================
+
+root_keys        := "keys"
+tls_dir          := "ersha-tls"
+prime_keys       := "ersha-prime/keys"
+dispatch_keys    := "ersha-dispatch/keys"
+rpc_example_keys := "ersha-rpc/examples/keys"
+
+# Generate mTLS certificates and distribute to all crates
+tls-setup: tls-gen tls-dist tls-clean-tmp
+
+# Generate the actual certificates inside the ersha-tls directory
+tls-gen:
+    @echo "Generating mTLS assets..."
+    cd {{tls_dir}} && openssl genrsa -out root_ca.key 4096
+    cd {{tls_dir}} && openssl req -x509 -new -nodes -key root_ca.key -sha256 -days 1024 -out root_ca.crt \
+      -subj "/CN=MyLocalCA"
+    # Server Cert
+    cd {{tls_dir}} && openssl genrsa -out server_raw.key 2048
+    cd {{tls_dir}} && openssl req -new -key server_raw.key -out server.csr -subj "/CN=localhost"
+    cd {{tls_dir}} && openssl x509 -req -in server.csr -CA root_ca.crt -CAkey root_ca.key -CAcreateserial \
+      -out server.crt -days 500 -sha256 \
+      -extfile <(printf "subjectAltName=DNS:localhost,IP:127.0.0.1")
+    # Client Cert
+    cd {{tls_dir}} && openssl genrsa -out client_raw.key 2048
+    cd {{tls_dir}} && openssl req -new -key client_raw.key -out client.csr -subj "/CN=my-client"
+    cd {{tls_dir}} && openssl x509 -req -in client.csr -CA root_ca.crt -CAkey root_ca.key -CAcreateserial \
+      -out client.crt -days 500 -sha256
+    # Convert keys to PKCS#8
+    cd {{tls_dir}} && openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in server_raw.key -out server.key
+    cd {{tls_dir}} && openssl pkcs8 -topk8 -inform PEM -outform PEM -nocrypt -in client_raw.key -out client.key
+
+# Distribute keys to prime, dispatch, and rpc examples
+tls-dist:
+    @echo "Distributing keys to crates..."
+    mkdir -p {{prime_keys}} {{dispatch_keys}} {{rpc_example_keys}} {{root_keys}}
+    cp {{tls_dir}}/server.crt {{tls_dir}}/server.key {{tls_dir}}/root_ca.crt {{root_keys}}/
+    cp {{tls_dir}}/client.crt {{tls_dir}}/client.key {{tls_dir}}/root_ca.crt {{root_keys}}/
+    # Server gets server keys + root CA
+    cp {{tls_dir}}/server.crt {{tls_dir}}/server.key {{tls_dir}}/root_ca.crt {{prime_keys}}/
+    # Client gets client keys + root CA
+    cp {{tls_dir}}/client.crt {{tls_dir}}/client.key {{tls_dir}}/root_ca.crt {{dispatch_keys}}/
+    # RPC examples get everything to facilitate both client/server examples
+    cp {{tls_dir}}/server.crt {{tls_dir}}/server.key {{tls_dir}}/client.crt {{tls_dir}}/client.key {{tls_dir}}/root_ca.crt {{rpc_example_keys}}/
+
+# Clean intermediate files inside the tls directory
+tls-clean-tmp:
+    @echo "Cleaning temporary signing files..."
+    cd {{tls_dir}} && rm -f *.csr server_raw.key client_raw.key root_ca.srl
+
+# Wipe all generated keys from the entire workspace for a fresh start
+tls-wipe:
+    @echo "Wiping all TLS assets from workspace..."
+    rm -rf {{prime_keys}} {{dispatch_keys}} {{rpc_example_keys}} {{root_keys}}
+    cd {{tls_dir}} && rm -f *.crt *.key *.csr *.srl

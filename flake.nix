@@ -46,6 +46,8 @@
 
             pkgs.jsonnet
             pkgs.jsonnet-bundler
+
+            pkgs.openssl
           ];
         };
       });

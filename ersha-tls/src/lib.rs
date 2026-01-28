@@ -35,6 +35,26 @@ pub struct TlsConfig {
     pub domain: String,
 }
 
+impl TlsConfig {
+    pub fn server_default() -> Self {
+        Self {
+            cert: PathBuf::from("./keys/server.crt"),
+            key: PathBuf::from("./keys/server.key"),
+            root_ca: PathBuf::from("./keys/root_ca.crt"),
+            domain: String::from("localhost"),
+        }
+    }
+
+    pub fn client_default() -> Self {
+        Self {
+            cert: PathBuf::from("./keys/client.crt"),
+            key: PathBuf::from("./keys/client.key"),
+            root_ca: PathBuf::from("./keys/root_ca.crt"),
+            domain: String::from("localhost"),
+        }
+    }
+}
+
 impl Default for TlsConfig {
     fn default() -> Self {
         Self {
