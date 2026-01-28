@@ -22,10 +22,6 @@ build-prime:
 build-dispatch:
     cargo build -p ersha-dispatch
 
-# Build ersha-dashboard (with SSR feature for binary)
-build-dashboard:
-    cargo build -p ersha-dashboard --features ssr
-
 # Build ersha-core library
 build-core:
     cargo build -p ersha-core
@@ -45,10 +41,6 @@ run-prime *ARGS:
 # Run ersha-dispatch service (default config: ersha-dispatch.toml)
 run-dispatch *ARGS:
     cargo run -p ersha-dispatch -- {{ARGS}}
-
-# Run ersha-dashboard (requires SSR feature)
-run-dashboard *ARGS:
-    cargo run -p ersha-dashboard --features ssr -- {{ARGS}}
 
 # ============================================================
 # Example Recipes (from ersha-rpc)
@@ -89,10 +81,6 @@ test-prime:
 # Run tests for ersha-dispatch
 test-dispatch:
     cargo test -p ersha-dispatch
-
-# Run tests for ersha-dashboard
-test-dashboard:
-    cargo test -p ersha-dashboard
 
 # ============================================================
 # Infrastructure Recipes
